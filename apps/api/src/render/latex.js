@@ -73,7 +73,7 @@ ${s.code ? `\\begin{lstlisting}\n${safeVerbatim(s.code)}\n\\end{lstlisting}` : "
     .join("\n\n");
 
   return `\\documentclass[a4paper,12pt]{article}
-\\usepackage[margin=25mm,top=32mm,bottom=30mm,headheight=28mm]{geometry}
+\\usepackage[margin=25mm,top=38mm,bottom=30mm,headheight=12pt,headsep=6mm]{geometry}
 \\usepackage{graphicx}
 \\usepackage{fancyhdr}
 \\usepackage{eso-pic}
@@ -83,12 +83,13 @@ ${s.code ? `\\begin{lstlisting}\n${safeVerbatim(s.code)}\n\\end{lstlisting}` : "
 \\usepackage{hyperref}
 \\pagestyle{fancy}
 \\fancyhf{}
-${hasHeader ? `\\fancyhead[C]{\\includegraphics[width=\\textwidth,keepaspectratio]{header.png}}` : "\\fancyhead[C]{\\textbf{Assignment}}"}
+\\fancyhead[C]{}
 \\fancyfoot[C]{\\thepage}
 \\AddToShipoutPictureBG{%
 \\begin{tikzpicture}[remember picture,overlay]
 \\draw[line width=1.2pt] ([xshift=10mm,yshift=-10mm]current page.north west) rectangle ([xshift=-10mm,yshift=10mm]current page.south east);
 ${hasWatermark ? `\\node[opacity=${WATERMARK_OPACITY}] at (current page.center) {\\includegraphics[width=0.55\\paperwidth,keepaspectratio]{watermark.png}};` : ""}
+${hasHeader ? `\\node[anchor=north] at ([yshift=-13mm]current page.north) {\\includegraphics[width=170mm,keepaspectratio]{header.png}};` : ""}
 \\end{tikzpicture}%
 }
 \\begin{document}

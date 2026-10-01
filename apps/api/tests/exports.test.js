@@ -42,7 +42,8 @@ describe("LaTeX renderer", () => {
   });
   it("spans the header full width, keeps footer to page number only, left-aligns faculty title", () => {
     const tex = renderLatex(doc, getDefaultTemplate());
-    assert.ok(tex.includes("\\includegraphics[width=\\textwidth,keepaspectratio]{header.png}"), "header must span full text width");
+    assert.ok(tex.includes("\\includegraphics[width=170mm,keepaspectratio]{header.png}"), "header must span the frame width");
+    assert.ok(tex.includes("anchor=north") && tex.includes("yshift=-13mm"), "header must pin just inside the border top");
     assert.ok(tex.includes("\\fancyfoot[C]{\\thepage}"), "footer must be page number only");
     assert.ok(!tex.includes("Thakur College"), "footer college text must be gone");
     assert.ok(!tex.includes("\\begin{center}\n{\\bfseries For Faculty Use}"), "faculty title must not be centered");
