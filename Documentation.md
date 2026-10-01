@@ -179,7 +179,7 @@ production along with `JWT_SECRET`, `AUTH_REQUIRED=1`, and Redis rate limiting.
 | Same, but health loads | Proxy env hijacking localhost → unset `HTTP_PROXY/HTTPS_PROXY` in API terminal, set `NO_PROXY=127.0.0.1,localhost` |
 | `EADDRINUSE :4000/:8001` | Orphan from a dead session → find PID via `Get-NetTCPConnection -LocalPort 4000,8001` and `Stop-Process` it |
 | Empty `{}` → 400 | Expected: aim is mandatory |
-| PDF export 502 | No compiler (expected until texlive setup); error body carries the log tail |
+| PDF export 502 | Read the message: missing image = pull texlive; otherwise the log tail names the cause |
 | `opacity` looks wrong in Word | Expected: DOCX uses PNG-native transparency (see §7) |
 | Board shows stale "default v1" template | Pre-template record in localStorage → clear site data (keys are now `…v2`) |
 | History empties on restart | Expected without Mongo (memory store); set `MONGODB_URI` |

@@ -881,6 +881,18 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
   const [optBusy, setOptBusy] = useState(false)
   const [optError, setOptError] = useState('')
   const [previewKey, setPreviewKey] = useState(0)
+  const [recordGone, setRecordGone] = useState(false)
+
+  // Records live in server memory: after an API restart old cards point at
+  // nothing. Detect it explicitly instead of showing a dead preview.
+  useEffect(() => {
+    const recordId = issue.record?.id
+    if (!recordId) return
+    setRecordGone(false)
+    fetch(`${apiBase}/api/v1/assignments/${recordId}`, { headers: authHeaders() })
+      .then((r) => { if (r.status === 404) setRecordGone(true) })
+      .catch(() => { /* offline banner covers unreachable servers */ })
+  }, [issue.record?.id, apiBase])
   const content = issue.record?.content ?? null
   const prov = issue.record?.provenance
   const prio = priorityOf(issue.difficulty)
@@ -1171,6 +1183,17 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
                 <span className="text-[12px] text-[#8590A2]">(uncheck for handwriting space)</span>
               </label>
               {optError && <p className="break-words text-[12px] text-red-700">{optError}</p>}
+            </div>
+          )}
+
+          {recordGone && (
+            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
+              <p className="text-[13px] font-semibold text-amber-900">This preview expired</p>
+              <p className="mt-1 text-[12px] text-amber-800">The API restarted and no longer holds this record. Retry generation to create a fresh one.</p>
+              <button onClick={() => onRetry(issue.key)} className="mt-2.5 inline-flex items-center gap-1.5 rounded-md bg-[#0C66E4] px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-[#0055CC]">
+                <Icon name="refresh" className="h-4 w-4" />
+                Retry generation
+              </button>
             </div>
           )}
 

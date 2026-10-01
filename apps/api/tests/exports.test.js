@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { renderLatex, escapeLatex } from "../src/render/latex.js";
 import { renderDocx } from "../src/render/docx.js";
-import { compileLatexToPdf, fillCmd, toWslPath } from "../src/lib/compile.js";
+import { checkCompiler, compileLatexToPdf, fillCmd, toWslPath } from "../src/lib/compile.js";
 import { getDefaultTemplate } from "../src/lib/templates.js";
 import { WATERMARK_OPACITY } from "../src/render/html.js";
 
@@ -60,6 +60,20 @@ describe("DOCX renderer", () => {
 });
 
 describe("PDF compiler", () => {
+  it("preflight says plainly when the compiler image is missing", async () => {
+    const prevBin = process.env.PDF_DOCKER;
+    process.env.PDF_DOCKER = "definitely-not-docker-xyz";
+    try {
+      const out = await checkCompiler();
+      assert.equal(out.ok, false);
+      assert.ok(out.error.includes("not available"), "expected pull instructions");
+      assert.ok(out.error.includes("docker pull"), "expected the pull command");
+    } finally {
+      if (prevBin === undefined) delete process.env.PDF_DOCKER;
+      else process.env.PDF_DOCKER = prevBin;
+    }
+  });
+
   it("fails gracefully when no compiler is available", async () => {
     const prev = process.env.PDF_COMPILE_CMD;
     process.env.PDF_COMPILE_CMD = "definitely-not-a-real-command-xyz {dir}";

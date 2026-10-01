@@ -226,10 +226,12 @@ assignmentsRouter.post("/:id/pdf", async (req, res) => {
   const record = getRecord(req.params.id);
   if (!record) return res.status(404).json({ error: "Not found" });
   try {
-    const [{ renderLatex }, { compileLatexToPdf }] = await Promise.all([
+    const [{ renderLatex }, { compileLatexToPdf, checkCompiler }] = await Promise.all([
       import("../render/latex.js"),
       import("../lib/compile.js"),
     ]);
+    const preflight = await checkCompiler();
+    if (!preflight.ok) return res.status(502).json({ error: preflight.error });
     const seed = getTemplateDoc(record.template?.id) || getDefaultTemplateDoc();
     const tex = record.latexOverride ?? renderLatex(record.content, seed, record.options);
     const out = await compileLatexToPdf(tex, seed);

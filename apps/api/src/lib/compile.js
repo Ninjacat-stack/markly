@@ -20,6 +20,33 @@ const DEFAULT_CMD =
   process.env.PDF_COMPILE_CMD ??
   'docker run --rm -v "{dir}:/work" -w /work texlive/texlive:latest pdflatex -interaction=nonstopmode -halt-on-error doc.tex';
 
+// Compiler preflight: which docker and which image to look for. Checked BEFORE
+// every compile so a missing image produces "pull it" instructions instead of
+// a cryptic 2-minute timeout while docker tries to fetch gigabytes.
+function dockerBin() {
+  if (process.env.PDF_DOCKER) return process.env.PDF_DOCKER;
+  // Infer from the compile command: everything before " run " ("wsl docker" or "docker").
+  const cmd = process.env.PDF_COMPILE_CMD ?? DEFAULT_CMD;
+  const idx = cmd.indexOf(" run ");
+  return idx === -1 ? "docker" : cmd.slice(0, idx);
+}
+const COMPILER_IMAGE = process.env.PDF_IMAGE ?? "texlive/texlive:latest";
+
+export async function checkCompiler() {
+  try {
+    await execFileAsync(`${dockerBin()} image inspect ${COMPILER_IMAGE}`, { shell: true, timeout: 30000 });
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        `PDF compiler image "${COMPILER_IMAGE}" is not available locally ` +
+        `(${String(err.message ?? err).slice(0, 200)}). ` +
+        `Pull it first: docker pull ${COMPILER_IMAGE}`,
+    };
+  }
+}
+
 // Translate a Windows temp path (C:\Users\…) to its WSL mount (/mnt/c/Users/…).
 // Non-Windows paths pass through untouched.
 export function toWslPath(dir) {
