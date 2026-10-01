@@ -47,10 +47,10 @@ cd apps/api && npm install && npm start   # :4000, in-memory mode unless MONGODB
 npm install && npm run dev                # :5173
 ```
 
-Open `:5173` and use the nav: **Create** (sync or background-job generation),
-**History**, assignment **Preview** (document iframe + sources + DOCX/PDF export),
-**Edit** (per-section editing + regeneration, Monaco LaTeX tab), **Templates**
-(list, create, sample-PDF import), **Login** (JWT; API enforces only with `AUTH_REQUIRED=1`).
+Open `:5173`: a workspace board (To Do / In Progress / Done, persisted locally).
+Create cards with aim + subject + template dropdown; the detail drawer shows
+sections, sources, document preview, per-section editing + regeneration, LaTeX
+editing, and DOCX/PDF/HTML export. (`src/pages/*` are unwired reference variants.)
 
 ## Templates, header & watermark
 

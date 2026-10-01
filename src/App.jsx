@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:4000'
-const LS_ISSUES = 'assignmentai.issues.v1'
-const LS_SEQ = 'assignmentai.seq.v1'
+const LS_ISSUES = 'assignmentai.issues.v2'
+const LS_SEQ = 'assignmentai.seq.v2'
 
 /* ---------------------------------- data --------------------------------- */
 
@@ -29,6 +29,19 @@ const COLUMNS = [
   { id: 'inprogress', title: 'In Progress' },
   { id: 'done', title: 'Done' },
 ]
+
+const EDITABLE_SECTIONS = ['title', 'aim', 'objectives', 'theory', 'steps', 'conclusion']
+
+function sectionToText(section, value) {
+  if (value == null) return ''
+  if (typeof value === 'string') return value
+  return JSON.stringify(value, null, 2)
+}
+
+function sectionFromText(section, text) {
+  if (['title', 'aim', 'conclusion'].includes(section)) return text
+  return JSON.parse(text)
+}
 
 /* --------------------------------- helpers -------------------------------- */
 
@@ -325,6 +338,7 @@ export default function App() {
   const [prefill, setPrefill] = useState(null)
   const [toasts, setToasts] = useState([])
   const [serviceUp, setServiceUp] = useState(null)
+  const [templates, setTemplates] = useState([])
   const toastId = useRef(0)
 
   const pushToast = useCallback((kind, title, message) => {
@@ -353,6 +367,10 @@ export default function App() {
     fetch(`${API_BASE}/api/v1/health`)
       .then((r) => setServiceUp(r.ok))
       .catch(() => setServiceUp(false))
+    fetch(`${API_BASE}/api/v1/templates`)
+      .then((r) => r.json())
+      .then((d) => setTemplates(d.templates ?? []))
+      .catch(() => setTemplates([]))
   }, [])
 
   const runGeneration = useCallback(
@@ -379,6 +397,8 @@ export default function App() {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(payload),
+          // Never spin forever: a stalled gateway fails here instead of hanging the card.
+          signal: AbortSignal.timeout(180000),
         })
         const data = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(data?.error ? String(data.error) : `Request failed (${res.status})`)
@@ -408,7 +428,7 @@ export default function App() {
           experimentNumber: form.experimentNumber.trim(),
           technology: form.technology.trim(),
           difficulty: form.difficulty,
-          templateId: form.templateId,
+          templateId: form.templateId || undefined,
           status: 'inprogress',
           error: '',
           record: null,
@@ -437,7 +457,9 @@ export default function App() {
     const recordId = issue.record?.id
     if (!recordId) return
     try {
-      const res = await fetch(`${API_BASE}/api/v1/assignments/${recordId}/html`)
+      const res = await fetch(`${API_BASE}/api/v1/assignments/${recordId}/html`, {
+        signal: AbortSignal.timeout(180000),
+      })
       if (!res.ok) throw new Error(`Export failed (${res.status})`)
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
@@ -543,6 +565,7 @@ export default function App() {
           onRetry={() => runGeneration(selected.key)}
           onDelete={() => deleteIssue(selected.key)}
           onDownload={() => downloadHtml(selected)}
+          onRecordUpdate={(key, record) => setIssues((prev) => prev.map((it) => (it.key === key ? { ...it, record } : it)))}
           onOpenPreview={() => window.open(`${API_BASE}/api/v1/assignments/${selected.record.id}/html`, '_blank', 'noopener')}
           apiBase={API_BASE}
         />
@@ -551,6 +574,7 @@ export default function App() {
       {createOpen && (
         <CreateModal
           initial={prefill}
+          templates={templates}
           onClose={() => {
             setCreateOpen(false)
             setPrefill(null)
@@ -616,12 +640,150 @@ function EmptyState({ onCreate }) {
 
 /* ------------------------------- detail drawer ----------------------------- */
 
-function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPreview, apiBase }) {
+function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPreview, onRecordUpdate, apiBase }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showRawJson, setShowRawJson] = useState(false)
+  const [exportBusy, setExportBusy] = useState('')
+  const [exportError, setExportError] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [drafts, setDrafts] = useState({})
+  const [regenBusy, setRegenBusy] = useState('')
+  const [saveBusy, setSaveBusy] = useState(false)
+  const [editError, setEditError] = useState('')
+  const [latex, setLatex] = useState(null)
+  const [latexBusy, setLatexBusy] = useState(false)
+  const [latexError, setLatexError] = useState('')
   const content = issue.record?.content ?? null
   const prov = issue.record?.provenance
   const prio = priorityOf(issue.difficulty)
+
+  async function exportFile(kind) {
+    const recordId = issue.record?.id
+    if (!recordId) return
+    setExportBusy(kind)
+    setExportError('')
+    try {
+      const res = await fetch(`${apiBase}/api/v1/assignments/${recordId}/${kind}`, {
+        method: kind === 'pdf' ? 'POST' : 'GET',
+        headers: { 'content-type': 'application/json' },
+        body: kind === 'pdf' ? '{}' : undefined,
+        signal: AbortSignal.timeout(180000),
+      })
+      const ctype = res.headers.get('content-type') ?? ''
+      if (!res.ok || ctype.includes('application/json')) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data?.error ?? `Export failed (${res.status})`)
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${issue.key}-assignment.${kind === 'docx' ? 'docx' : 'pdf'}`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 5000)
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setExportBusy('')
+    }
+  }
+
+  async function regenSection(section) {
+    const recordId = issue.record?.id
+    if (!recordId) return
+    setRegenBusy(section)
+    setEditError('')
+    try {
+      const res = await fetch(`${apiBase}/api/v1/assignments/${recordId}/regenerate-section`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ section }),
+        signal: AbortSignal.timeout(180000),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error ?? `Regeneration failed (${res.status})`)
+      onRecordUpdate(issue.key, data)
+      setDrafts((d) => ({ ...d, [section]: undefined }))
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setRegenBusy('')
+    }
+  }
+
+  async function saveAllSections() {
+    const recordId = issue.record?.id
+    if (!recordId) return
+    setEditError('')
+    let next
+    try {
+      next = { ...issue.record.content }
+      for (const s of EDITABLE_SECTIONS) {
+        if (drafts[s] !== undefined) next[s] = sectionFromText(s, drafts[s])
+      }
+    } catch {
+      setEditError('Invalid JSON in objectives / theory / steps — fix the syntax and retry.')
+      return
+    }
+    setSaveBusy(true)
+    try {
+      const res = await fetch(`${apiBase}/api/v1/assignments/${recordId}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ content: next }),
+        signal: AbortSignal.timeout(60000),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error ?? `Save failed (${res.status})`)
+      onRecordUpdate(issue.key, data)
+      setDrafts({})
+      setEditing(false)
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSaveBusy(false)
+    }
+  }
+
+  async function loadLatex() {
+    const recordId = issue.record?.id
+    if (!recordId) return
+    setLatexBusy(true)
+    setLatexError('')
+    try {
+      const res = await fetch(`${apiBase}/api/v1/assignments/${recordId}/latex`, { signal: AbortSignal.timeout(60000) })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error ?? `LaTeX load failed (${res.status})`)
+      setLatex(data.latex ?? '')
+    } catch (err) {
+      setLatexError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setLatexBusy(false)
+    }
+  }
+
+  async function saveLatex() {
+    const recordId = issue.record?.id
+    if (!recordId || latex === null) return
+    setLatexBusy(true)
+    setLatexError('')
+    try {
+      const res = await fetch(`${apiBase}/api/v1/assignments/${recordId}/latex`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ latex }),
+        signal: AbortSignal.timeout(60000),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error ?? `LaTeX save failed (${res.status})`)
+    } catch (err) {
+      setLatexError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setLatexBusy(false)
+    }
+  }
 
   return (
     <>
@@ -801,6 +963,97 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
                 <p className="mt-1.5 text-[13px] leading-relaxed text-[#334155]">{content.conclusion}</p>
               </section>
 
+              {(issue.record?.sources?.length > 0) && (
+                <section>
+                  <SectionHeading icon="external">Sources used · {issue.record.sources.length}</SectionHeading>
+                  <ul className="mt-1.5 flex flex-col gap-1.5">
+                    {issue.record.sources.map((s, i) => (
+                      <li key={i} className="rounded-md border border-[#EBECF0] px-3 py-2 text-[13px]">
+                        <a href={s.url} target="_blank" rel="noreferrer" className="font-medium text-[#0C66E4] hover:underline">
+                          {s.title || s.url}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              <section>
+                <SectionHeading icon="download">Exports</SectionHeading>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button onClick={() => exportFile('docx')} disabled={exportBusy !== ''} className="inline-flex items-center gap-1.5 rounded-md border border-[#DFE1E6] px-2.5 py-1.5 text-[13px] font-medium text-[#44546F] hover:bg-[#F7F8FA] disabled:opacity-50">
+                    <Icon name="download" className="h-4 w-4" />
+                    {exportBusy === 'docx' ? 'Preparing…' : 'Export DOCX'}
+                  </button>
+                  <button onClick={() => exportFile('pdf')} disabled={exportBusy !== ''} className="inline-flex items-center gap-1.5 rounded-md border border-[#DFE1E6] px-2.5 py-1.5 text-[13px] font-medium text-[#44546F] hover:bg-[#F7F8FA] disabled:opacity-50">
+                    <Icon name="download" className="h-4 w-4" />
+                    {exportBusy === 'pdf' ? 'Compiling…' : 'Export PDF'}
+                  </button>
+                </div>
+                {exportError && <p className="mt-2 break-words text-[12px] text-red-700">{exportError}</p>}
+              </section>
+
+              <section>
+                <div className="flex items-center justify-between">
+                  <SectionHeading icon="check">Edit sections</SectionHeading>
+                  <button onClick={() => { setEditing((v) => !v); setEditError('') }} className="text-[12px] font-medium text-[#0C66E4] hover:underline">
+                    {editing ? 'Done' : 'Edit'}
+                  </button>
+                </div>
+                {editing && (
+                  <div className="mt-2 flex flex-col gap-3">
+                    {EDITABLE_SECTIONS.map((s) => (
+                      <div key={s}>
+                        <div className="mb-1 flex items-center justify-between">
+                          <p className="text-[12px] font-semibold capitalize text-[#44546F]">{s}</p>
+                          <button onClick={() => regenSection(s)} disabled={regenBusy !== ''} className="text-[12px] font-medium text-[#0C66E4] hover:underline disabled:opacity-50">
+                            {regenBusy === s ? 'Regenerating…' : 'Regenerate'}
+                          </button>
+                        </div>
+                        <textarea
+                          value={drafts[s] ?? sectionToText(s, content[s])}
+                          onChange={(e) => setDrafts((d) => ({ ...d, [s]: e.target.value }))}
+                          rows={['title', 'aim'].includes(s) ? 2 : 6}
+                          spellCheck={false}
+                          className="w-full rounded-md border border-[#DFE1E6] px-2.5 py-2 font-mono text-[12px] leading-relaxed focus:border-[#0C66E4] focus:outline-none"
+                        />
+                      </div>
+                    ))}
+                    <div>
+                      <button onClick={saveAllSections} disabled={saveBusy} className="rounded-md bg-[#0C66E4] px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-[#0055CC] disabled:opacity-70">
+                        {saveBusy ? 'Saving…' : 'Save all sections'}
+                      </button>
+                    </div>
+                    {editError && <p className="break-words text-[12px] text-red-700">{editError}</p>}
+                  </div>
+                )}
+              </section>
+
+              <section>
+                <div className="flex items-center justify-between">
+                  <SectionHeading icon="file">LaTeX source</SectionHeading>
+                  <button onClick={loadLatex} disabled={latexBusy} className="text-[12px] font-medium text-[#0C66E4] hover:underline disabled:opacity-50">
+                    {latex === null ? (latexBusy ? 'Loading…' : 'Load') : 'Reload'}
+                  </button>
+                </div>
+                {latex !== null && (
+                  <div className="mt-2">
+                    <textarea
+                      value={latex}
+                      onChange={(e) => setLatex(e.target.value)}
+                      rows={14}
+                      spellCheck={false}
+                      className="w-full rounded-md border border-[#DFE1E6] bg-[#FAFBFC] px-2.5 py-2 font-mono text-[11px] leading-relaxed focus:border-[#0C66E4] focus:outline-none"
+                    />
+                    <button onClick={saveLatex} disabled={latexBusy} className="mt-2 rounded-md bg-[#0C66E4] px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-[#0055CC] disabled:opacity-70">
+                      {latexBusy ? 'Saving…' : 'Save LaTeX'}
+                    </button>
+                    <p className="mt-1 text-[12px] text-[#626F86]">PDF export compiles this source in an isolated container.</p>
+                  </div>
+                )}
+                {latexError && <p className="mt-2 break-words text-[12px] text-red-700">{latexError}</p>}
+              </section>
+
               <section>
                 <SectionHeading icon="file">Document preview</SectionHeading>
                 <p className="mt-1 text-[12px] text-[#626F86]">Department header and watermark applied on every page.</p>
@@ -837,7 +1090,7 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
 
 /* ------------------------------- create modal ------------------------------ */
 
-function CreateModal({ initial, onClose, onSubmit }) {
+function CreateModal({ initial, templates = [], onClose, onSubmit }) {
   const [form, setForm] = useState({
     aim: initial?.aim ?? '',
     description: initial?.description ?? '',
@@ -845,6 +1098,7 @@ function CreateModal({ initial, onClose, onSubmit }) {
     experimentNumber: initial?.experimentNumber ?? '',
     technology: initial?.technology ?? '',
     difficulty: initial?.difficulty ?? 'Intermediate',
+    templateId: initial?.templateId ?? '',
   })
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -953,6 +1207,20 @@ function CreateModal({ initial, onClose, onSubmit }) {
             <select id="f-diff" value={form.difficulty} onChange={(e) => set('difficulty', e.target.value)} className={inputCls}>
               {DIFFICULTIES.map((d) => (
                 <option key={d}>{d}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="mt-3">
+            <label className={labelCls} htmlFor="f-template">
+              Template
+            </label>
+            <select id="f-template" value={form.templateId} onChange={(e) => set('templateId', e.target.value)} className={inputCls}>
+              <option value="">Default (active template)</option>
+              {templates.map((t) => (
+                <option key={`${t.id}@${t.version}`} value={t.id}>
+                  {t.name} v{t.version}
+                </option>
               ))}
             </select>
           </div>

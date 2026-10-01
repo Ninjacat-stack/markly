@@ -24,7 +24,7 @@ React (:5173)
 
 | Path | Purpose |
 |---|---|
-| `src/` | Frontend (React + Vite): `App.jsx` (router shell), `main.jsx`, `pages/` (7 pages), `components/ui.jsx`, `lib/api.js` |
+| `src/` | Frontend: `App.jsx` workspace board; `pages/` + `lib/api.js` are unwired reference variants |
 | `apps/api/src/index.js` | Express entry: helmet, CORS, logging, auth attach, static `/assets`, rate limit, route mounts, optional Mongo |
 | `apps/api/src/routes/` | `assignments.js` (generate/get/list/html/regen/PUT/docx/latex/pdf), `templates.js` (CRUD + from-pdf), `examples.js` (ingest proxy), `jobs.js`, `auth.js`, `health.js` |
 | `apps/api/src/lib/` | `aiClient.js` (AI calls), `subjects.js` (profiles), `templates.js` (seed loader), `templateStore.js` (versioning), `assignmentStore.js` (records), `queue.js` (jobs), `auth.js` (JWT), `storage.js` (files), `compile.js` (PDF) |
@@ -125,13 +125,18 @@ AI service: `GET /health`, `POST /v1/generate`, `POST /v1/regenerate-section`,
   `REDIS_URL` + `BULLMQ_ENABLED=1` is set (status map stays in-process — move to Redis/Mongo for multi-instance).
 - Auth: bcrypt + JWT, open dev mode unless `AUTH_REQUIRED=1`.
 
-## 8. Frontend pages
+## 8. Frontend (Jira-style workspace board)
 
-`/` landing · `/create` (Hook Form + sync/async job with polling) ·
-`/assignments/:id` (preview iframe, sources, DOCX/PDF export, provenance) ·
-`/assignments/:id/edit` (per-section edit + regen, Monaco LaTeX tab) ·
-`/history` · `/templates` (list + PDF import) · `/login`. State via TanStack Query;
-API client in `src/lib/api.js`. Monaco loads its editor from CDN at runtime (needs internet).
+Single-page board in `src/App.jsx` (no router): To Do / In Progress / Done columns
+backed by `localStorage` (keys `…v2`; bump the suffix to invalidate stale shapes),
+create modal (aim, subject, experiment, technology, difficulty, template dropdown
+from `GET /templates`), detail drawer (metadata, sections, sources, preview iframe,
+raw JSON), per-section editing + regeneration + save, LaTeX view/edit, DOCX/PDF/HTML
+export with error surfacing, toasts, retry/delete. Every server call carries a
+180s `AbortSignal` timeout so stalls become errors, never infinite spinners.
+
+`src/pages/*` (router + Query + Monaco variants) are reference implementations kept
+for reuse but currently unwired — nothing imports them.
 
 ## 9. Testing
 
@@ -163,7 +168,7 @@ production along with `JWT_SECRET`, `AUTH_REQUIRED=1`, and Redis rate limiting.
 | Empty `{}` → 400 | Expected: aim is mandatory |
 | PDF export 502 | No compiler (expected until texlive setup); error body carries the log tail |
 | `opacity` looks wrong in Word | Expected: DOCX uses PNG-native transparency (see §7) |
-| Monaco blank | No internet (CDN) or ad-blocker |
+| Board shows stale "default v1" template | Pre-template record in localStorage → clear site data (keys are now `…v2`) |
 | History empties on restart | Expected without Mongo (memory store); set `MONGODB_URI` |
 
 ## 12. Known gaps (audit 2026-10-01; owner in brackets)

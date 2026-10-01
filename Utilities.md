@@ -33,10 +33,10 @@
 | Package | Purpose |
 |---|---|
 | `react`, `react-dom` | UI |
-| `react-router-dom` | 7 pages + nav |
+| `react-router-dom` | Installed; used only by the unwired `src/pages/*` reference variants |
 | `@tanstack/react-query` | Server state (queries, mutations, job polling) |
 | `react-hook-form` | Create form + validation |
-| `@monaco-editor/react` | LaTeX editor tab (**loads editor code from CDN at runtime — needs internet**) |
+| `@monaco-editor/react` | Installed; used only by the unwired reference `Editor.jsx` (board uses a plain LaTeX textarea) |
 | `tailwindcss`, `@tailwindcss/vite` | Styling (+ the Jira-style `@theme` in `src/index.css`) |
 | `vite`, `@vitejs/plugin-react` | Dev server + build |
 | `oxlint` | Lint (`npm run lint`) |
