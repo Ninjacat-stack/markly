@@ -46,3 +46,21 @@ export const assignmentContentSchema = z
     (doc) => doc.steps.every((s, i) => s.number === i + 1),
     { message: "steps must be numbered 1..n sequentially" },
   );
+
+// Per-section value schemas for Phase 3 single-section regeneration/editing.
+export const sectionValueSchemas = {
+  title: z.string().min(4).max(200),
+  aim: z.string().min(4).max(2000),
+  objectives: z.array(z.string().min(4).max(500)).min(1).max(10),
+  theory: z.array(z.string().min(10).max(2000)).min(1).max(20),
+  steps: z
+    .array(stepSchema)
+    .min(1)
+    .max(15)
+    .refine((steps) => steps.every((s, i) => s.number === i + 1), {
+      message: "steps must be numbered 1..n sequentially",
+    }),
+  conclusion: z.string().min(10).max(2000),
+};
+
+export const SECTION_NAMES = Object.keys(sectionValueSchemas);

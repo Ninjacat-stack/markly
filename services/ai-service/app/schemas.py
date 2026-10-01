@@ -47,3 +47,26 @@ class GenerateResponse(BaseModel):
     model: str
     promptVersion: str
     validation: dict[str, Any]
+    sources: list[dict[str, Any]] = Field(default_factory=list)
+    researchProvider: str = "none"
+
+
+SECTION_NAMES = ("title", "aim", "objectives", "theory", "steps", "conclusion")
+
+
+class RegenerateRequest(BaseModel):
+    """Regenerate one section using the rest of the document as context."""
+
+    section: str = Field(pattern="^(title|aim|objectives|theory|steps|conclusion)$")
+    aim: str = Field(min_length=4, max_length=2000)
+    subject: str = Field(default="DBMS", max_length=64)
+    current: AssignmentContent
+    additionalInstructions: str | None = Field(default=None, max_length=2000)
+
+
+class RegenerateResponse(BaseModel):
+    section: str
+    value: Any
+    provider: str
+    model: str
+    promptVersion: str
