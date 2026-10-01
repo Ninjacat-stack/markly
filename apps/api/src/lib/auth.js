@@ -8,10 +8,16 @@ import jwt from "jsonwebtoken";
 const users = new Map(); // email -> { id, email, name, passwordHash, tenantIds }
 
 function secret() {
-  if (!process.env.JWT_SECRET) {
-    console.warn("[auth] JWT_SECRET not set — using insecure dev default. Set it in production.");
+  // A publicly documented placeholder must never become a real signing key:
+  // fail closed in production, warn loudly in dev.
+  const placeholders = new Set(["", "change-me-in-production", "changeme", "secret", "dev-only-insecure-secret"]);
+  const configured = process.env.JWT_SECRET ?? "";
+  if (!placeholders.has(configured)) return configured;
+  if (process.env.AUTH_REQUIRED === "1") {
+    throw new Error("[auth] refusing to run with a placeholder JWT_SECRET while AUTH_REQUIRED=1. Set a strong random value.");
   }
-  return process.env.JWT_SECRET ?? "dev-only-insecure-secret";
+  console.warn("[auth] JWT_SECRET not set (or still the documented placeholder) — using insecure dev default. Set a strong value before deploying.");
+  return "dev-only-insecure-secret";
 }
 
 export async function registerUser({ email, password, name }) {
