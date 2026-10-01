@@ -1061,7 +1061,6 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
     setCopiedLatex(true)
     setTimeout(() => setCopiedLatex(false), 1500)
   }
-  }
 
   return (
     <>
