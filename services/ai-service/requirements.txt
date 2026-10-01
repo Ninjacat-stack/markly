@@ -3,3 +3,7 @@ uvicorn[standard]==0.30.*
 pydantic==2.*
 httpx==0.28.*
 python-dotenv==1.*
+sqlglot==26.*
+pypdf==5.*
+reportlab==4.*
+python-multipart==0.0.*
