@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { apiGet, apiPost, apiPut } from '../lib/api.js'
-import { Button, Card, ErrorText, Field, inputCls } from '../components/ui.jsx'
+import { Button, Card, ErrorText, inputCls } from '../components/ui.jsx'
 
 const SECTIONS = ['title', 'aim', 'objectives', 'theory', 'steps', 'conclusion']
 

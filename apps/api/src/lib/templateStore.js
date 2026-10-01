@@ -56,8 +56,6 @@ export function createTemplate(data) {
   const id = data.id ?? `${slugify(data.name)}-${Date.now().toString(36)}`;
   if (latest.has(id)) throw new Error(`Template "${id}" already exists (update it for a new version)`);
   const t = {
-    id,
-    version: 1,
     status: "draft",
     requiredSections: ["title", "aim", "objectives", "theory", "steps", "conclusion"],
     page: { size: "A4", margin: { top: "110px", right: "18mm", bottom: "20mm", left: "18mm" } },

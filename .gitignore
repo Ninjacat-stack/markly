@@ -6,6 +6,7 @@ services/ai-service/.env
 # Runtime data (never commit: generated files, uploads, ingested corpus)
 apps/api/assets/generated/
 apps/api/assets/uploads/
+apps/api/data/
 services/ai-service/corpus/
 
 # Python
@@ -13,6 +14,7 @@ __pycache__/
 *.py[cod]
 .venv/
 services/ai-service/*.log
+apps/api/*.log
 
 node_modules
 dist

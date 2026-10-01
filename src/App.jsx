@@ -255,6 +255,28 @@ function CodeBlock({ code, language }) {
 
 /* --------------------------------- issue card ------------------------------ */
 
+function RetryLink({ onRetry, label, className }) {
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      onClick={(e) => {
+        e.stopPropagation()
+        onRetry()
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.stopPropagation()
+          onRetry()
+        }
+      }}
+      className={cx('cursor-pointer font-semibold underline underline-offset-2', className)}
+    >
+      {label}
+    </span>
+  )
+}
+
 function IssueCard({ issue, selected, onSelect, onRetry }) {
   const content = issue.record?.content
   const prio = priorityOf(issue.difficulty)
@@ -284,23 +306,13 @@ function IssueCard({ issue, selected, onSelect, onRetry }) {
       {issue.status === 'failed' && (
         <div className="mt-2.5 rounded-md bg-red-50 px-2 py-1.5 text-[12px] text-red-700">
           <span className="font-semibold">Generation failed. </span>
-          <span
-            role="button"
-            tabIndex={0}
-            onClick={(e) => {
-              e.stopPropagation()
-              onRetry(issue.key)
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.stopPropagation()
-                onRetry(issue.key)
-              }
-            }}
-            className="font-semibold underline underline-offset-2 hover:text-red-900"
-          >
-            Retry
-          </span>
+          <RetryLink onRetry={() => onRetry(issue.key)} label="Retry" className="text-red-700 hover:text-red-900" />
+        </div>
+      )}
+      {issue.stale && issue.status === 'done' && (
+        <div className="mt-2.5 rounded-md bg-amber-50 px-2 py-1.5 text-[12px] text-amber-800">
+          <span className="font-semibold">Document cleared. </span>
+          <RetryLink onRetry={() => onRetry(issue.key)} label="Regenerate" className="text-amber-800 hover:text-amber-950" />
         </div>
       )}
 
@@ -373,25 +385,22 @@ export default function App() {
       .catch(() => setTemplates([]))
   }, [])
 
-  const runGeneration = useCallback(
-    async (key) => {
-      let payload = null
-      setIssues((prev) =>
-        prev.map((it) => {
-          if (it.key !== key) return it
-          payload = {
-            aim: it.aim,
-            description: it.description || undefined,
-            subject: it.subject,
-            experimentNumber: it.experimentNumber ? Number(it.experimentNumber) : undefined,
-            technology: it.technology || undefined,
-            templateId: it.templateId || undefined,
-            difficulty: it.difficulty || undefined,
-          }
-          return { ...it, status: 'inprogress', error: '' }
-        }),
-      )
-      if (!payload) return
+  // Payload is built from the issue object itself — never captured inside a
+  // setIssues updater (React only runs the first updater of an event
+  // synchronously; capturing later leaves payload null and no request is sent).
+  const startGeneration = useCallback(
+    async (issue) => {
+      const key = issue.key
+      const payload = {
+        aim: issue.aim,
+        description: issue.description || undefined,
+        subject: issue.subject,
+        experimentNumber: issue.experimentNumber ? Number(issue.experimentNumber) : undefined,
+        technology: issue.technology || undefined,
+        templateId: issue.templateId || undefined,
+        difficulty: issue.difficulty || undefined,
+      }
+      setIssues((prev) => prev.map((it) => (it.key === key ? { ...it, status: 'inprogress', error: '', stale: false } : it)))
       try {
         const res = await fetch(`${API_BASE}/api/v1/assignments/generate`, {
           method: 'POST',
@@ -403,7 +412,7 @@ export default function App() {
         const data = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(data?.error ? String(data.error) : `Request failed (${res.status})`)
         if (!data?.content) throw new Error('Service returned an empty assignment')
-        setIssues((prev) => prev.map((it) => (it.key === key ? { ...it, status: 'done', record: data } : it)))
+        setIssues((prev) => prev.map((it) => (it.key === key ? { ...it, status: 'done', record: data, stale: false } : it)))
         setSelectedKey(key)
         pushToast('success', `${key} generated`, 'Assignment content is ready for review.')
       } catch (err) {
@@ -415,33 +424,73 @@ export default function App() {
     [pushToast],
   )
 
+  const runGeneration = useCallback(
+    (key) => {
+      const issue = issues.find((it) => it.key === key)
+      if (!issue || issue.status === 'inprogress') return
+      return startGeneration(issue)
+    },
+    [issues, startGeneration],
+  )
+
+  const markStale = useCallback((key) => {
+    setIssues((prev) => prev.map((it) => (it.key === key && !it.stale ? { ...it, stale: true } : it)))
+  }, [])
+
+  const issuesRef = useRef(issues)
+
+  // Records live in the service process; after a restart old ids 404. Detect on
+  // load so preview/export controls degrade gracefully instead of failing.
+  useEffect(() => {
+    const withRecord = issuesRef.current.filter((it) => it.record?.id)
+    if (withRecord.length === 0) return undefined
+    let cancelled = false
+    Promise.all(
+      withRecord.map(async (it) => {
+        try {
+          const res = await fetch(`${API_BASE}/api/v1/assignments/${it.record.id}`, { signal: AbortSignal.timeout(10000) })
+          return res.status === 404 ? it.key : null
+        } catch {
+          return null // network trouble ≠ record gone
+        }
+      }),
+    ).then((keys) => {
+      const missing = new Set(keys.filter(Boolean))
+      if (!cancelled && missing.size > 0) {
+        setIssues((prev) => prev.map((it) => (missing.has(it.key) && !it.stale ? { ...it, stale: true } : it)))
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const createIssue = useCallback(
     (form) => {
       const key = `ASG-${seq}`
       setSeq((s) => s + 1)
-      setIssues((prev) => [
-        {
-          key,
-          aim: form.aim.trim(),
-          description: form.description.trim(),
-          subject: form.subject,
-          experimentNumber: form.experimentNumber.trim(),
-          technology: form.technology.trim(),
-          difficulty: form.difficulty,
-          templateId: form.templateId || undefined,
-          status: 'inprogress',
-          error: '',
-          record: null,
-          createdAt: new Date().toISOString(),
-        },
-        ...prev,
-      ])
+      const issue = {
+        key,
+        aim: form.aim.trim(),
+        description: form.description.trim(),
+        subject: form.subject,
+        experimentNumber: form.experimentNumber.trim(),
+        technology: form.technology.trim(),
+        difficulty: form.difficulty,
+        templateId: form.templateId || undefined,
+        status: 'inprogress',
+        error: '',
+        stale: false,
+        record: null,
+        createdAt: new Date().toISOString(),
+      }
+      setIssues((prev) => [issue, ...prev])
       setCreateOpen(false)
       setPrefill(null)
       setSelectedKey(key)
-      runGeneration(key)
+      startGeneration(issue)
     },
-    [runGeneration, seq],
+    [startGeneration, seq],
   )
 
   const deleteIssue = useCallback(
@@ -460,6 +509,11 @@ export default function App() {
       const res = await fetch(`${API_BASE}/api/v1/assignments/${recordId}/html`, {
         signal: AbortSignal.timeout(180000),
       })
+      if (res.status === 404) {
+        markStale(issue.key)
+        pushToast('error', 'Document cleared', 'The service no longer has this record — regenerate the assignment to restore exports.')
+        return
+      }
       if (!res.ok) throw new Error(`Export failed (${res.status})`)
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
@@ -565,7 +619,8 @@ export default function App() {
           onRetry={() => runGeneration(selected.key)}
           onDelete={() => deleteIssue(selected.key)}
           onDownload={() => downloadHtml(selected)}
-          onRecordUpdate={(key, record) => setIssues((prev) => prev.map((it) => (it.key === key ? { ...it, record } : it)))}
+          onRecordUpdate={(key, record) => setIssues((prev) => prev.map((it) => (it.key === key ? { ...it, record, stale: false } : it)))}
+          onMarkStale={markStale}
           onOpenPreview={() => window.open(`${API_BASE}/api/v1/assignments/${selected.record.id}/html`, '_blank', 'noopener')}
           apiBase={API_BASE}
         />
@@ -640,7 +695,7 @@ function EmptyState({ onCreate }) {
 
 /* ------------------------------- detail drawer ----------------------------- */
 
-function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPreview, onRecordUpdate, apiBase }) {
+function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPreview, onRecordUpdate, onMarkStale, apiBase }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showRawJson, setShowRawJson] = useState(false)
   const [exportBusy, setExportBusy] = useState('')
@@ -656,6 +711,16 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
   const content = issue.record?.content ?? null
   const prov = issue.record?.provenance
   const prio = priorityOf(issue.difficulty)
+  const stale = issue.stale === true
+
+  // 404 means the service lost this record (restart) — flag it so the UI offers regeneration.
+  function failMessage(res, data) {
+    if (res.status === 404) {
+      onMarkStale(issue.key)
+      return 'This record was cleared on the service — regenerate the assignment to restore this feature.'
+    }
+    return data?.error ?? `Request failed (${res.status})`
+  }
 
   async function exportFile(kind) {
     const recordId = issue.record?.id
@@ -669,6 +734,10 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
         body: kind === 'pdf' ? '{}' : undefined,
         signal: AbortSignal.timeout(180000),
       })
+      if (res.status === 404) {
+        onMarkStale(issue.key)
+        throw new Error('This record was cleared on the service — regenerate the assignment to restore exports.')
+      }
       const ctype = res.headers.get('content-type') ?? ''
       if (!res.ok || ctype.includes('application/json')) {
         const data = await res.json().catch(() => ({}))
@@ -703,7 +772,7 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
         signal: AbortSignal.timeout(180000),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data?.error ?? `Regeneration failed (${res.status})`)
+      if (!res.ok) throw new Error(failMessage(res, data))
       onRecordUpdate(issue.key, data)
       setDrafts((d) => ({ ...d, [section]: undefined }))
     } catch (err) {
@@ -736,7 +805,7 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
         signal: AbortSignal.timeout(60000),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data?.error ?? `Save failed (${res.status})`)
+      if (!res.ok) throw new Error(failMessage(res, data))
       onRecordUpdate(issue.key, data)
       setDrafts({})
       setEditing(false)
@@ -755,7 +824,7 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
     try {
       const res = await fetch(`${apiBase}/api/v1/assignments/${recordId}/latex`, { signal: AbortSignal.timeout(60000) })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data?.error ?? `LaTeX load failed (${res.status})`)
+      if (!res.ok) throw new Error(failMessage(res, data))
       setLatex(data.latex ?? '')
     } catch (err) {
       setLatexError(err instanceof Error ? err.message : String(err))
@@ -777,7 +846,7 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
         signal: AbortSignal.timeout(60000),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data?.error ?? `LaTeX save failed (${res.status})`)
+      if (!res.ok) throw new Error(failMessage(res, data))
     } catch (err) {
       setLatexError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -793,10 +862,10 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
           <span className="font-mono text-[12px] text-[#626F86]">{issue.key}</span>
           <StatusPill status={issue.status} />
           <span className="ml-auto flex items-center gap-0.5">
-            <button title="Download document" onClick={onDownload} disabled={!issue.record} className="rounded p-1.5 text-[#44546F] hover:bg-[#F1F2F4] disabled:opacity-40">
+            <button title="Download document" onClick={onDownload} disabled={!issue.record || stale} className="rounded p-1.5 text-[#44546F] hover:bg-[#F1F2F4] disabled:opacity-40">
               <Icon name="download" className="h-4 w-4" />
             </button>
-            <button title="Open document" onClick={onOpenPreview} disabled={!issue.record} className="rounded p-1.5 text-[#44546F] hover:bg-[#F1F2F4] disabled:opacity-40">
+            <button title="Open document" onClick={onOpenPreview} disabled={!issue.record || stale} className="rounded p-1.5 text-[#44546F] hover:bg-[#F1F2F4] disabled:opacity-40">
               <Icon name="external" className="h-4 w-4" />
             </button>
             <button title="Delete" onClick={() => setConfirmDelete(true)} className="rounded p-1.5 text-[#44546F] hover:bg-red-50 hover:text-red-700">
@@ -862,6 +931,23 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
               </div>
             )}
           </dl>
+
+          {stale && (
+            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
+              <p className="text-[13px] font-semibold text-amber-900">Stored document was cleared</p>
+              <p className="mt-1 text-[12px] text-amber-800">
+                The service restarted and no longer has this record. The content below stays readable — regenerate to
+                restore the document preview, exports and editing.
+              </p>
+              <button
+                onClick={() => onRetry(issue.key)}
+                className="mt-2.5 inline-flex items-center gap-1.5 rounded-md bg-[#0C66E4] px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-[#0055CC]"
+              >
+                <Icon name="refresh" className="h-4 w-4" />
+                Regenerate assignment
+              </button>
+            </div>
+          )}
 
           {issue.status === 'inprogress' && (
             <div className="mt-4 flex flex-col gap-2 rounded-lg border border-blue-200 bg-[#F7FAFF] p-4">
@@ -978,28 +1064,31 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
                 </section>
               )}
 
-              <section>
-                <SectionHeading icon="download">Exports</SectionHeading>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <button onClick={() => exportFile('docx')} disabled={exportBusy !== ''} className="inline-flex items-center gap-1.5 rounded-md border border-[#DFE1E6] px-2.5 py-1.5 text-[13px] font-medium text-[#44546F] hover:bg-[#F7F8FA] disabled:opacity-50">
-                    <Icon name="download" className="h-4 w-4" />
-                    {exportBusy === 'docx' ? 'Preparing…' : 'Export DOCX'}
-                  </button>
-                  <button onClick={() => exportFile('pdf')} disabled={exportBusy !== ''} className="inline-flex items-center gap-1.5 rounded-md border border-[#DFE1E6] px-2.5 py-1.5 text-[13px] font-medium text-[#44546F] hover:bg-[#F7F8FA] disabled:opacity-50">
-                    <Icon name="download" className="h-4 w-4" />
-                    {exportBusy === 'pdf' ? 'Compiling…' : 'Export PDF'}
-                  </button>
-                </div>
-                {exportError && <p className="mt-2 break-words text-[12px] text-red-700">{exportError}</p>}
-              </section>
+              {!stale && (
+                <section>
+                  <SectionHeading icon="download">Exports</SectionHeading>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button onClick={() => exportFile('docx')} disabled={exportBusy !== ''} className="inline-flex items-center gap-1.5 rounded-md border border-[#DFE1E6] px-2.5 py-1.5 text-[13px] font-medium text-[#44546F] hover:bg-[#F7F8FA] disabled:opacity-50">
+                      <Icon name="download" className="h-4 w-4" />
+                      {exportBusy === 'docx' ? 'Preparing…' : 'Export DOCX'}
+                    </button>
+                    <button onClick={() => exportFile('pdf')} disabled={exportBusy !== ''} className="inline-flex items-center gap-1.5 rounded-md border border-[#DFE1E6] px-2.5 py-1.5 text-[13px] font-medium text-[#44546F] hover:bg-[#F7F8FA] disabled:opacity-50">
+                      <Icon name="download" className="h-4 w-4" />
+                      {exportBusy === 'pdf' ? 'Compiling…' : 'Export PDF'}
+                    </button>
+                  </div>
+                  {exportError && <p className="mt-2 break-words text-[12px] text-red-700">{exportError}</p>}
+                </section>
+              )}
 
-              <section>
-                <div className="flex items-center justify-between">
-                  <SectionHeading icon="check">Edit sections</SectionHeading>
-                  <button onClick={() => { setEditing((v) => !v); setEditError('') }} className="text-[12px] font-medium text-[#0C66E4] hover:underline">
-                    {editing ? 'Done' : 'Edit'}
-                  </button>
-                </div>
+              {!stale && (
+                <section>
+                  <div className="flex items-center justify-between">
+                    <SectionHeading icon="check">Edit sections</SectionHeading>
+                    <button onClick={() => { setEditing((v) => !v); setEditError('') }} className="text-[12px] font-medium text-[#0C66E4] hover:underline">
+                      {editing ? 'Done' : 'Edit'}
+                    </button>
+                  </div>
                 {editing && (
                   <div className="mt-2 flex flex-col gap-3">
                     {EDITABLE_SECTIONS.map((s) => (
@@ -1027,15 +1116,17 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
                     {editError && <p className="break-words text-[12px] text-red-700">{editError}</p>}
                   </div>
                 )}
-              </section>
+                </section>
+              )}
 
-              <section>
-                <div className="flex items-center justify-between">
-                  <SectionHeading icon="file">LaTeX source</SectionHeading>
-                  <button onClick={loadLatex} disabled={latexBusy} className="text-[12px] font-medium text-[#0C66E4] hover:underline disabled:opacity-50">
-                    {latex === null ? (latexBusy ? 'Loading…' : 'Load') : 'Reload'}
-                  </button>
-                </div>
+              {!stale && (
+                <section>
+                  <div className="flex items-center justify-between">
+                    <SectionHeading icon="file">LaTeX source</SectionHeading>
+                    <button onClick={loadLatex} disabled={latexBusy} className="text-[12px] font-medium text-[#0C66E4] hover:underline disabled:opacity-50">
+                      {latex === null ? (latexBusy ? 'Loading…' : 'Load') : 'Reload'}
+                    </button>
+                  </div>
                 {latex !== null && (
                   <div className="mt-2">
                     <textarea
@@ -1052,34 +1143,37 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
                   </div>
                 )}
                 {latexError && <p className="mt-2 break-words text-[12px] text-red-700">{latexError}</p>}
-              </section>
+                </section>
+              )}
 
-              <section>
-                <SectionHeading icon="file">Document preview</SectionHeading>
-                <p className="mt-1 text-[12px] text-[#626F86]">Department header and watermark applied on every page.</p>
-                <div className="mt-2 overflow-hidden rounded-lg border border-[#DFE1E6]">
-                  <iframe title={`Document preview for ${issue.key}`} src={`${apiBase}/api/v1/assignments/${issue.record.id}/html`} className="h-[420px] w-full bg-white" />
-                </div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <button onClick={onDownload} className="inline-flex items-center gap-1.5 rounded-md border border-[#DFE1E6] px-2.5 py-1.5 text-[13px] font-medium text-[#44546F] hover:bg-[#F7F8FA]">
-                    <Icon name="download" className="h-4 w-4" />
-                    Download HTML
-                  </button>
-                  <button onClick={onOpenPreview} className="inline-flex items-center gap-1.5 rounded-md border border-[#DFE1E6] px-2.5 py-1.5 text-[13px] font-medium text-[#44546F] hover:bg-[#F7F8FA]">
-                    <Icon name="external" className="h-4 w-4" />
-                    Print
-                  </button>
-                  <button onClick={() => setShowRawJson((v) => !v)} className="inline-flex items-center gap-1.5 rounded-md border border-[#DFE1E6] px-2.5 py-1.5 text-[13px] font-medium text-[#44546F] hover:bg-[#F7F8FA]">
-                    <Icon name="copy" className="h-4 w-4" />
-                    {showRawJson ? 'Hide JSON' : 'View JSON'}
-                  </button>
-                </div>
-                {showRawJson && (
-                  <pre className="mt-2 max-h-64 overflow-auto rounded-md bg-[#172B4D] p-3 font-mono text-[11px] leading-relaxed text-slate-100">
-                    {JSON.stringify({ provenance: issue.record.provenance, content }, null, 2)}
-                  </pre>
-                )}
-              </section>
+              {!stale && (
+                <section>
+                  <SectionHeading icon="file">Document preview</SectionHeading>
+                  <p className="mt-1 text-[12px] text-[#626F86]">Department header and watermark applied on every page.</p>
+                  <div className="mt-2 overflow-hidden rounded-lg border border-[#DFE1E6]">
+                    <iframe title={`Document preview for ${issue.key}`} src={`${apiBase}/api/v1/assignments/${issue.record.id}/html`} className="h-[420px] w-full bg-white" />
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button onClick={onDownload} className="inline-flex items-center gap-1.5 rounded-md border border-[#DFE1E6] px-2.5 py-1.5 text-[13px] font-medium text-[#44546F] hover:bg-[#F7F8FA]">
+                      <Icon name="download" className="h-4 w-4" />
+                      Download HTML
+                    </button>
+                    <button onClick={onOpenPreview} className="inline-flex items-center gap-1.5 rounded-md border border-[#DFE1E6] px-2.5 py-1.5 text-[13px] font-medium text-[#44546F] hover:bg-[#F7F8FA]">
+                      <Icon name="external" className="h-4 w-4" />
+                      Print
+                    </button>
+                    <button onClick={() => setShowRawJson((v) => !v)} className="inline-flex items-center gap-1.5 rounded-md border border-[#DFE1E6] px-2.5 py-1.5 text-[13px] font-medium text-[#44546F] hover:bg-[#F7F8FA]">
+                      <Icon name="copy" className="h-4 w-4" />
+                      {showRawJson ? 'Hide JSON' : 'View JSON'}
+                    </button>
+                  </div>
+                  {showRawJson && (
+                    <pre className="mt-2 max-h-64 overflow-auto rounded-md bg-[#172B4D] p-3 font-mono text-[11px] leading-relaxed text-slate-100">
+                      {JSON.stringify({ provenance: issue.record.provenance, content }, null, 2)}
+                    </pre>
+                  )}
+                </section>
+              )}
             </div>
           )}
         </div>
