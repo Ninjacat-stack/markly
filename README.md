@@ -1,9 +1,10 @@
-# AssignmentAI — Phase 0 + Phase 1 (POC) + Phase 2 (HTML documents)
+# AssignmentAI — all phases built (0–9)
 
-Assignment compiler: **React → Express → FastAPI → Qwen → validated Assignment JSON → HTML document.**
+Assignment compiler: **React → Express → FastAPI → Qwen → validated Assignment JSON → HTML / DOCX / LaTeX / PDF.**
 
-> Scope guard (per product spec): Phases 1–2 only.
-> No web search, no RAG/vector DB, no fine-tuning, no DOCX, no PDF. Those land in Phases 3–9.
+> Phases 0–9 are implemented: generation POC, HTML renderer, section editor,
+> DOCX + LaTeX + containerized PDF, research layer, PDF corpus, SQL checks,
+> template versioning, jobs + auth + hardening, and the full multi-page frontend.
 
 ## Layout
 
@@ -28,8 +29,8 @@ The LLM generates **content only**. Layout is owned by templates/renderers (Phas
 
 ```bash
 cp .env.example .env                                   # VITE_API_URL
-cp apps/api/.env.example apps/api/.env                 # PORT, AI_SERVICE_URL, MONGODB_URI (optional)
-cp services/ai-service/.env.example services/ai-service/.env   # LLM_BASE_URL, LLM_API_KEY, LLM_MODEL
+cp apps/api/.env.example apps/api/.env                 # PORT, AI_SERVICE_URL, MONGODB_URI (optional), JWT_SECRET, AUTH_REQUIRED, REDIS_URL, PDF_COMPILE_CMD
+cp services/ai-service/.env.example services/ai-service/.env   # LLM_BASE_URL, LLM_API_KEY, LLM_MODEL, TAVILY_API_KEY / SEARXNG_URL
 ```
 
 ## Run (local, 3 terminals)
@@ -46,26 +47,49 @@ cd apps/api && npm install && npm start   # :4000, in-memory mode unless MONGODB
 npm install && npm run dev                # :5173
 ```
 
-Open `:5173`, enter e.g. **"Explore subqueries in SQL"** → structured result plus a
-printable **document preview** (`GET /api/v1/assignments/:id/html`) with the tenant
-header and watermark on every page.
+Open `:5173` and use the nav: **Create** (sync or background-job generation),
+**History**, assignment **Preview** (document iframe + sources + DOCX/PDF export),
+**Edit** (per-section editing + regeneration, Monaco LaTeX tab), **Templates**
+(list, create, sample-PDF import), **Login** (JWT; API enforces only with `AUTH_REQUIRED=1`).
 
 ## Templates, header & watermark
 
-- Tenant templates are **data** (`apps/api/src/templates/*.json`), never hardcoded logic.
-  Seeded: `tcet-computer-engineering` v1 (TCET Computer Engineering Practical).
+- Tenant templates are **data** (`apps/api/src/templates/*.json` seeds + `lib/templateStore.js`
+  runtime CRUD), never hardcoded logic. Seeded: `tcet-computer-engineering` v1.
+  Updates fork new immutable versions; `GET /api/v1/templates/:id?version=N` reads history.
 - Artwork lives in `apps/api/assets/` (served at `/assets/*`):
   drop in `tcet-header.png` (department banner) and `tcet-watermark.png` (shield logo).
   Missing files render as labeled placeholders so layout is reviewable without artwork.
 - **Watermark opacity is ALWAYS 50%** — enforced by `WATERMARK_OPACITY` in
-  `apps/api/src/render/html.js`, which overrides any template value.
-- `GET /api/v1/templates` lists available templates.
+  `apps/api/src/render/html.js` (HTML) and `render/latex.js` (`\transparent{0.5}`).
+  DOCX uses the PNG as-is (OOXML has no opacity flag), so save that file at 50% transparency.
+- `POST /api/v1/templates/from-pdf` drafts a template from a sample PDF (AI `/v1/analyze-template`).
+
+## Research, corpus, validation
+
+- Search: `SearchProvider` abstraction (Tavily via `TAVILY_API_KEY`, SearXNG via
+  `SEARXNG_URL`); skipped gracefully when unconfigured. Sources are stored per
+  assignment and shown in the UI. Extracted pages are treated as untrusted input.
+- Corpus: `POST /api/v1/examples/ingest` (PDF → normalized example);
+  top examples shape generation as style guidance. No vector DB (keyword retrieval;
+  Qdrant plugs into `retrieve_examples()` later).
+- Code checks: SQL blocks are parsed with sqlglot (failures trigger regeneration);
+  `app/sandbox.py` runs untrusted code only in network-isolated containers (no HTTP exposure).
+
+## Jobs, auth, hardening
+
+- `POST /api/v1/jobs` (type `generate`) → `202` + pollable
+  `pending → researching → generating → validating → completed/failed`.
+  BullMQ + Redis transport activates with `REDIS_URL`; otherwise in-process.
+- Auth: `POST /api/v1/auth/register|login` (bcrypt + JWT), `GET /api/v1/auth/me`.
+- Helmet headers, request logging, in-memory rate limiting, 25MB upload caps with
+  PDF/PNG type checks, LaTeX length caps, unhandled-rejection logging.
 
 ## Tests
 
 ```bash
-cd services/ai-service && python tests/test_phase1.py   # schema, viva rejection, stub pipeline
-cd apps/api && npm test                                 # zod + template + HTML renderer tests (11 passing)
+cd services/ai-service && python tests/test_phase1.py   # + test_phase3/5/6/7/8.py per subsystem
+cd apps/api && npm test                                 # 27 passing: schemas, templates, renderer, exports, auth, queue
 ```
 
 ## Verified on 2026-10-01 (Windows, no Docker, no gateway, no Mongo)
@@ -80,11 +104,7 @@ cd apps/api && npm test                                 # zod + template + HTML 
 ## What remains (later phases)
 
 - Phase 2: ✅ HTML renderer + tenant templates + header/watermark (done)
-- Phase 3: editor + per-section regeneration
-- Phase 4: DOCX / LaTeX → PDF (sandboxed compile)
-- Phase 5: `SearchProvider` abstraction + source tracking
-- Phase 6: ingest the 50–60 PDFs → structured examples → retrieval
-- Phase 7: subject validators (SQL first; sandboxed execution only)
-- Phase 8: Tenant/Department/Subject/Template CRUD + versioning + PDF→template draft flow
-- Phase 9: Redis/BullMQ jobs, rate-limit hardening, file storage, observability
-- Frontend: Tailwind/shadcn, TanStack Query, Hook Form, Monaco (Phase 2+)
+- Phases 3–9: ✅ all implemented (see sections above)
+- Deliberately deferred: real-gateway quality QA, texlive end-to-end compile,
+  Redis-backed BullMQ, Mongo-backed history, Qdrant embeddings,
+  full shadcn component set, "Explain this assignment" tutoring feature
