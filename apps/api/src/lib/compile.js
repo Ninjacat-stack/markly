@@ -11,19 +11,30 @@ const execFileAsync = promisify(execFile);
 // Default strategy: one-shot texlive container. Override with PDF_COMPILE_CMD,
 // a shell template using {dir} (working dir holding doc.tex) — e.g. on a
 // machine with native Docker:  docker run --rm -v "{dir}:/work" -w /work texlive/texlive:latest ...
-// From Windows with Docker inside WSL:  wsl docker run --rm -v "$(wslpath '{dir}'):/work" -w /work texlive/texlive:latest ...
+// From Windows with Docker inside WSL, use the {wslDir} placeholder (cmd.exe
+// cannot do $(wslpath) interpolation, so Node translates the path itself):
+//   wsl docker run --rm -v "{wslDir}:/work" -w /work texlive/texlive:latest pdflatex -interaction=nonstopmode -halt-on-error doc
 // Compilation failures return { ok: false } with the compiler output attached.
 
 const DEFAULT_CMD =
   process.env.PDF_COMPILE_CMD ??
   'docker run --rm -v "{dir}:/work" -w /work texlive/texlive:latest pdflatex -interaction=nonstopmode -halt-on-error doc.tex';
 
-function fillCmd(dir) {
-  return DEFAULT_CMD.replaceAll("{dir}", dir).replaceAll("{tex}", join(dir, "doc.tex"));
+// Translate a Windows temp path (C:\Users\…) to its WSL mount (/mnt/c/Users/…).
+// Non-Windows paths pass through untouched.
+export function toWslPath(dir) {
+  const m = /^([A-Za-z]):[\\/](.*)$/.exec(dir);
+  if (!m) return dir.replaceAll("\\", "/");
+  return `/mnt/${m[1].toLowerCase()}/${m[2].replaceAll("\\", "/")}`;
 }
 
-export async function compileLatexToPdf(tex, template) {
-  const dir = mkdtempSync(join(tmpdir(), "assignmentai-tex-"));
+export function fillCmd(dir) {
+  const cmd = process.env.PDF_COMPILE_CMD ?? DEFAULT_CMD;
+  return cmd.replaceAll("{wslDir}", toWslPath(dir)).replaceAll("{dir}", dir).replaceAll("{tex}", join(dir, "doc.tex"));
+}
+
+export async function compileLatexToPdf(tex, template, workDir) {
+  const dir = workDir ?? mkdtempSync(join(tmpdir(), "assignmentai-tex-"));
   try {
     writeFileSync(join(dir, "doc.tex"), tex);
     // Asset filenames are fixed so \includegraphics{header.png} resolves.

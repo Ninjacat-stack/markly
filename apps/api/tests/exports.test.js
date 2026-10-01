@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { renderLatex, escapeLatex } from "../src/render/latex.js";
 import { renderDocx } from "../src/render/docx.js";
-import { compileLatexToPdf } from "../src/lib/compile.js";
+import { compileLatexToPdf, fillCmd, toWslPath } from "../src/lib/compile.js";
 import { getDefaultTemplate } from "../src/lib/templates.js";
 import { WATERMARK_OPACITY } from "../src/render/html.js";
 
@@ -57,6 +57,25 @@ describe("PDF compiler", () => {
       const out = await compileLatexToPdf("\\documentclass{article}\\begin{document}hi\\end{document}", null);
       assert.equal(out.ok, false);
       assert.ok(out.error.length > 0, "expected an explanatory error, not a crash");
+    } finally {
+      if (prev === undefined) delete process.env.PDF_COMPILE_CMD;
+      else process.env.PDF_COMPILE_CMD = prev;
+    }
+  });
+});
+
+describe("WSL compile command", () => {
+  it("translates Windows temp paths for WSL docker mounts", () => {
+    assert.equal(toWslPath("C:\\Users\\Admin\\Temp\\assignmentai-tex-abc"), "/mnt/c/Users/Admin/Temp/assignmentai-tex-abc");
+    assert.equal(toWslPath("/tmp/assignmentai-tex-abc"), "/tmp/assignmentai-tex-abc");
+  });
+  it("fills {wslDir} from PDF_COMPILE_CMD", () => {
+    const prev = process.env.PDF_COMPILE_CMD;
+    process.env.PDF_COMPILE_CMD = 'wsl docker run --rm -v "{wslDir}:/work" img';
+    try {
+      const cmd = fillCmd("C:\\Users\\Admin\\Temp\\workdir");
+      assert.ok(cmd.includes("/mnt/c/Users/Admin/Temp/workdir:/work"), `got: ${cmd}`);
+      assert.ok(!cmd.includes("{wslDir}"), "placeholder must be replaced");
     } finally {
       if (prev === undefined) delete process.env.PDF_COMPILE_CMD;
       else process.env.PDF_COMPILE_CMD = prev;
