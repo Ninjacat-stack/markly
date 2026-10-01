@@ -878,6 +878,7 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
   const [latex, setLatex] = useState(null)
   const [latexBusy, setLatexBusy] = useState(false)
   const [latexError, setLatexError] = useState('')
+  const [copiedLatex, setCopiedLatex] = useState(false)
   const [optBusy, setOptBusy] = useState(false)
   const [optError, setOptError] = useState('')
   const [previewKey, setPreviewKey] = useState(0)
@@ -1044,25 +1045,22 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
     }
   }
 
-  async function saveLatex() {
-    const recordId = issue.record?.id
-    if (!recordId || latex === null) return
-    setLatexBusy(true)
-    setLatexError('')
+  async function copyLatex() {
+    if (latex === null) return
     try {
-      const res = await fetch(`${apiBase}/api/v1/assignments/${recordId}/latex`, {
-        method: 'PUT',
-        headers: authHeaders({ 'content-type': 'application/json' }),
-        body: JSON.stringify({ latex }),
-        signal: AbortSignal.timeout(60000),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(failMessage(res, data))
-    } catch (err) {
-      setLatexError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setLatexBusy(false)
+      await navigator.clipboard.writeText(latex)
+    } catch {
+      // Clipboard API unavailable (permissions) — legacy fallback.
+      const ta = document.createElement('textarea')
+      ta.value = latex
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      ta.remove()
     }
+    setCopiedLatex(true)
+    setTimeout(() => setCopiedLatex(false), 1500)
+  }
   }
 
   return (
@@ -1376,18 +1374,18 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
                     </button>
                   </div>
                 {latex !== null && (
-                  <div className="mt-2">
-                    <textarea
-                      value={latex}
-                      onChange={(e) => setLatex(e.target.value)}
-                      rows={14}
-                      spellCheck={false}
-                      className="w-full rounded-md border border-[#DFE1E6] bg-[#FAFBFC] px-2.5 py-2 font-mono text-[11px] leading-relaxed focus:border-[#0C66E4] focus:outline-none"
-                    />
-                    <button onClick={saveLatex} disabled={latexBusy} className="mt-2 rounded-md bg-[#0C66E4] px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-[#0055CC] disabled:opacity-70">
-                      {latexBusy ? 'Saving…' : 'Save LaTeX'}
-                    </button>
-                    <p className="mt-1 text-[12px] text-[#626F86]">PDF export compiles this source in an isolated container.</p>
+                  <div className="mt-2 overflow-hidden rounded-md border border-[#DFE1E6] bg-[#FAFBFC]">
+                    <div className="max-h-[50vh] overflow-auto">
+                      <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-[#EBECF0] bg-[#FAFBFC]/95 px-2.5 py-1.5 backdrop-blur">
+                        <span className="font-mono text-[11px] text-[#8590A2]">latex</span>
+                        <button onClick={copyLatex} className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-medium text-[#44546F] hover:bg-[#EBECF0]">
+                          <Icon name={copiedLatex ? 'check' : 'copy'} className="h-3.5 w-3.5" />
+                          {copiedLatex ? 'Copied!' : 'Copy code'}
+                        </button>
+                      </div>
+                      <pre className="whitespace-pre-wrap break-words px-3 py-2.5 font-mono text-[11px] leading-relaxed">{latex}</pre>
+                    </div>
+                    <p className="border-t border-[#EBECF0] px-2.5 py-1.5 text-[12px] text-[#626F86]">PDF export compiles this source in an isolated container.</p>
                   </div>
                 )}
                 {latexError && <p className="mt-2 break-words text-[12px] text-red-700">{latexError}</p>}
