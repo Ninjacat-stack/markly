@@ -22,7 +22,7 @@ export function escapeLatex(value) {
 }
 
 function safeVerbatim(code) {
-  return String(code ?? "").replaceAll("\\end{verbatim}", "END VERBATIM");
+  return String(code ?? "").replaceAll("\\end{lstlisting}", "END LISTING");
 }
 
 function facultyTable(t) {
@@ -42,8 +42,8 @@ function facultyTable(t) {
     })
     .join("\n");
   return `\\vfill
-\\begin{center}
 {\\bfseries ${escapeLatex(ft.title ?? "For Faculty Use")}}\\\\[2mm]
+\\begin{center}
 {\\small\\begin{tabular}{${spec}}
 \\hline
 ${head}
@@ -61,7 +61,6 @@ export function renderLatex(content, template, options = {}) {
   const vivaTex = includeVivaTitle ? "\\section*{Viva Questions}\n\\vspace{45mm}" : "";
   const hasHeader = Boolean(t.header?.image);
   const hasWatermark = Boolean(t.watermark?.image);
-  const footerText = escapeLatex(t.footer?.text ?? "");
 
   const steps = content.steps
     .map(
@@ -69,21 +68,23 @@ export function renderLatex(content, template, options = {}) {
 \\begin{itemize}
 ${s.description.map((d) => `  \\item ${escapeLatex(d)}`).join("\n")}
 \\end{itemize}
-${s.code ? `\\begin{verbatim}\n${safeVerbatim(s.code)}\n\\end{verbatim}` : ""}`,
+${s.code ? `\\begin{lstlisting}\n${safeVerbatim(s.code)}\n\\end{lstlisting}` : ""}`,
     )
     .join("\n\n");
 
   return `\\documentclass[a4paper,12pt]{article}
-\\usepackage[margin=25mm,top=32mm,bottom=25mm,headheight=28mm]{geometry}
+\\usepackage[margin=25mm,top=32mm,bottom=30mm,headheight=28mm]{geometry}
 \\usepackage{graphicx}
 \\usepackage{fancyhdr}
 \\usepackage{eso-pic}
 \\usepackage{tikz}
+\\usepackage{listings}
+\\lstset{basicstyle=\\ttfamily\\small,breaklines=true,breakatwhitespace=true,columns=fullflexible,keepspaces=true}
 \\usepackage{hyperref}
 \\pagestyle{fancy}
 \\fancyhf{}
-${hasHeader ? `\\fancyhead[C]{\\includegraphics[height=22mm,keepaspectratio]{header.png}}` : "\\fancyhead[C]{\\textbf{Assignment}}"}
-\\fancyfoot[C]{${footerText}${t.footer?.showPageNumber === false ? "" : " \\textbar\\ Page \\thepage"}}
+${hasHeader ? `\\fancyhead[C]{\\includegraphics[width=\\textwidth,keepaspectratio]{header.png}}` : "\\fancyhead[C]{\\textbf{Assignment}}"}
+\\fancyfoot[C]{\\thepage}
 \\AddToShipoutPictureBG{%
 \\begin{tikzpicture}[remember picture,overlay]
 \\draw[line width=1.2pt] ([xshift=10mm,yshift=-10mm]current page.north west) rectangle ([xshift=-10mm,yshift=10mm]current page.south east);

@@ -35,6 +35,21 @@ describe("LaTeX renderer", () => {
     assert.ok(tex.includes("opacity=0.5"), "watermark must use opacity=0.5");
     assert.ok(tex.includes("fancyhead"), "header must be configured");
   });
+  it("spans the header full width, keeps footer to page number only, left-aligns faculty title", () => {
+    const tex = renderLatex(doc, getDefaultTemplate());
+    assert.ok(tex.includes("\\includegraphics[width=\\textwidth,keepaspectratio]{header.png}"), "header must span full text width");
+    assert.ok(tex.includes("\\fancyfoot[C]{\\thepage}"), "footer must be page number only");
+    assert.ok(!tex.includes("Thakur College"), "footer college text must be gone");
+    assert.ok(!tex.includes("\\begin{center}\n{\\bfseries For Faculty Use}"), "faculty title must not be centered");
+    assert.ok(tex.includes("{\\bfseries For Faculty Use}"), "faculty title missing");
+  });
+  it("wraps long code lines so nothing exceeds the border", () => {
+    const tex = renderLatex(doc, getDefaultTemplate());
+    assert.ok(tex.includes("\\usepackage{listings}"), "listings package missing");
+    assert.ok(tex.includes("breaklines=true"), "code must wrap");
+    assert.ok(tex.includes("\\begin{lstlisting}"), "code must use lstlisting");
+    assert.ok(!tex.includes("\\begin{verbatim}"), "verbatim must be gone (it overflows)");
+  });
   it("prints the faculty table last at the bottom", () => {
     const tex = renderLatex(doc, getDefaultTemplate());
     assert.ok(tex.includes("For Faculty Use"), "faculty title missing");
