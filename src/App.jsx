@@ -106,7 +106,13 @@ export default function App() {
           </ol>
           <h3>Conclusion</h3>
           <p>{content.conclusion}</p>
-          <details>
+          <h3>Document preview (header + watermark on every page)</h3>
+          <iframe
+            title="Assignment document preview"
+            src={`${API_BASE}/api/v1/assignments/${result.id}/html`}
+            style={{ width: '100%', height: 640, border: '1px solid #ccc', background: '#fff' }}
+          />
+          <details style={{ marginTop: 12 }}>
             <summary>Provenance & raw JSON</summary>
             <pre style={{ background: '#111', color: '#eee', padding: 12, overflowX: 'auto', fontSize: 12 }}>
               {JSON.stringify({ provenance: result.provenance, content }, null, 2)}

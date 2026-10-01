@@ -1,9 +1,9 @@
-# AssignmentAI — Phase 0 + Phase 1 (POC)
+# AssignmentAI — Phase 0 + Phase 1 (POC) + Phase 2 (HTML documents)
 
-Assignment compiler: **React → Express → FastAPI → Qwen → validated Assignment JSON.**
+Assignment compiler: **React → Express → FastAPI → Qwen → validated Assignment JSON → HTML document.**
 
-> Scope guard (per product spec): Phase 1 is **only** the end-to-end POC.
-> No web search, no RAG/vector DB, no fine-tuning, no DOCX, no PDF. Those land in Phases 2–9.
+> Scope guard (per product spec): Phases 1–2 only.
+> No web search, no RAG/vector DB, no fine-tuning, no DOCX, no PDF. Those land in Phases 3–9.
 
 ## Layout
 
@@ -46,26 +46,40 @@ cd apps/api && npm install && npm start   # :4000, in-memory mode unless MONGODB
 npm install && npm run dev                # :5173
 ```
 
-Open `:5173`, enter e.g. **"Explore subqueries in SQL"** → structured JSON with
-title / aim / objectives / theory / steps / conclusion (never viva questions).
+Open `:5173`, enter e.g. **"Explore subqueries in SQL"** → structured result plus a
+printable **document preview** (`GET /api/v1/assignments/:id/html`) with the tenant
+header and watermark on every page.
+
+## Templates, header & watermark
+
+- Tenant templates are **data** (`apps/api/src/templates/*.json`), never hardcoded logic.
+  Seeded: `tcet-computer-engineering` v1 (TCET Computer Engineering Practical).
+- Artwork lives in `apps/api/assets/` (served at `/assets/*`):
+  drop in `tcet-header.png` (department banner) and `tcet-watermark.png` (shield logo).
+  Missing files render as labeled placeholders so layout is reviewable without artwork.
+- **Watermark opacity is ALWAYS 50%** — enforced by `WATERMARK_OPACITY` in
+  `apps/api/src/render/html.js`, which overrides any template value.
+- `GET /api/v1/templates` lists available templates.
 
 ## Tests
 
 ```bash
 cd services/ai-service && python tests/test_phase1.py   # schema, viva rejection, stub pipeline
-cd apps/api && npm test                                 # zod input + schema tests (6 passing)
+cd apps/api && npm test                                 # zod + template + HTML renderer tests (11 passing)
 ```
 
 ## Verified on 2026-10-01 (Windows, no Docker, no gateway, no Mongo)
 
 - AI-service tests pass; API tests 6/6 pass; `vite build` succeeds
 - Live E2E: `POST /api/v1/assignments/generate` with `{aim, subject: DBMS, experimentNumber: 7}`
-  → `status=completed`, 3 objectives, 3 steps, `provider=stub`; empty `{}` rejected with 400
+  → `status=completed`, 3 objectives, 3 steps, `provider=stub`, template `tcet-computer-engineering` v1; empty `{}` rejected with 400
+- Live document check: `GET /api/v1/assignments/:id/html` (7106 bytes) contains header ref,
+  watermark ref, `opacity: 0.5`, `@page` print CSS and fixed every-page positioning
 - AI service ran with `provider=stub` because no gateway env was configured (expected)
 
 ## What remains (later phases)
 
-- Phase 2: HTML renderer from Assignment JSON (same semantics as exports)
+- Phase 2: ✅ HTML renderer + tenant templates + header/watermark (done)
 - Phase 3: editor + per-section regeneration
 - Phase 4: DOCX / LaTeX → PDF (sandboxed compile)
 - Phase 5: `SearchProvider` abstraction + source tracking
