@@ -132,7 +132,9 @@ backed by `localStorage` (keys `…v2`; bump the suffix to invalidate stale shap
 create modal (aim, subject, experiment, technology, difficulty, template dropdown
 from `GET /templates`), detail drawer (metadata, sections, sources, preview iframe,
 raw JSON), per-section editing + regeneration + save, LaTeX view/edit, DOCX/PDF/HTML
-export with error surfacing, toasts, retry/delete. Every server call carries a
+export with error surfacing, Templates manager (create + sample-PDF import),
+server History (import records onto the board), Login (JWT stored and attached),
+toasts, retry/delete. Every server call carries a
 180s `AbortSignal` timeout so stalls become errors, never infinite spinners.
 
 `src/pages/*` (router + Query + Monaco variants) are reference implementations kept

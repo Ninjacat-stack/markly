@@ -3,6 +3,29 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:4000'
 const LS_ISSUES = 'assignmentai.issues.v2'
 const LS_SEQ = 'assignmentai.seq.v2'
+const LS_SESSION = 'assignmentai.session.v1'
+
+function loadSession() {
+  try {
+    const raw = localStorage.getItem(LS_SESSION)
+    if (!raw) return null
+    const s = JSON.parse(raw)
+    return s?.token ? s : null
+  } catch {
+    return null
+  }
+}
+
+// Auth headers for every API call (no-op when logged out; API runs open dev mode).
+function authHeaders(extra = {}) {
+  try {
+    const raw = localStorage.getItem(LS_SESSION)
+    const token = raw ? JSON.parse(raw)?.token : ''
+    return token ? { ...extra, Authorization: `Bearer ${token}` } : extra
+  } catch {
+    return extra
+  }
+}
 
 /* ---------------------------------- data --------------------------------- */
 
@@ -148,6 +171,33 @@ const PATHS = {
     <>
       <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5Z" />
       <path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5" />
+    </>
+  ),
+  clock: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5V12l3 2" />
+    </>
+  ),
+  grid: (
+    <>
+      <rect x="3.5" y="3.5" width="7" height="7" rx="1.5" />
+      <rect x="13.5" y="3.5" width="7" height="7" rx="1.5" />
+      <rect x="3.5" y="13.5" width="7" height="7" rx="1.5" />
+      <rect x="13.5" y="13.5" width="7" height="7" rx="1.5" />
+    </>
+  ),
+  user: (
+    <>
+      <circle cx="12" cy="8" r="3.5" />
+      <path d="M5 20a7 7 0 0 1 14 0" />
+    </>
+  ),
+  upload: (
+    <>
+      <path d="M12 15V3" />
+      <path d="m7 8 5-5 5 5" />
+      <path d="M4 21h16" />
     </>
   ),
   dot: <circle cx="12" cy="12" r="4" />,
@@ -351,7 +401,21 @@ export default function App() {
   const [toasts, setToasts] = useState([])
   const [serviceUp, setServiceUp] = useState(null)
   const [templates, setTemplates] = useState([])
+  const [templatesOpen, setTemplatesOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [loginOpen, setLoginOpen] = useState(false)
+  const [session, setSession] = useState(() => loadSession())
   const toastId = useRef(0)
+
+  function saveSession(next) {
+    setSession(next)
+    try {
+      if (next) localStorage.setItem(LS_SESSION, JSON.stringify(next))
+      else localStorage.removeItem(LS_SESSION)
+    } catch {
+      /* ignore */
+    }
+  }
 
   const pushToast = useCallback((kind, title, message) => {
     const id = ++toastId.current
@@ -379,7 +443,7 @@ export default function App() {
     fetch(`${API_BASE}/api/v1/health`)
       .then((r) => setServiceUp(r.ok))
       .catch(() => setServiceUp(false))
-    fetch(`${API_BASE}/api/v1/templates`)
+    fetch(`${API_BASE}/api/v1/templates`, { headers: authHeaders() })
       .then((r) => r.json())
       .then((d) => setTemplates(d.templates ?? []))
       .catch(() => setTemplates([]))
@@ -404,7 +468,7 @@ export default function App() {
       try {
         const res = await fetch(`${API_BASE}/api/v1/assignments/generate`, {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers: authHeaders({ 'content-type': 'application/json' }),
           body: JSON.stringify(payload),
           // Never spin forever: a stalled gateway fails here instead of hanging the card.
           signal: AbortSignal.timeout(180000),
@@ -502,11 +566,58 @@ export default function App() {
     [pushToast],
   )
 
+  const refreshTemplates = useCallback(async () => {
+    try {
+      const d = await fetch(`${API_BASE}/api/v1/templates`, { headers: authHeaders() }).then((r) => r.json())
+      setTemplates(d.templates ?? [])
+    } catch {
+      /* keep stale list */
+    }
+  }, [])
+
+  // Pull a server-side record onto the board as a finished card.
+  const importRecordToBoard = useCallback(
+    async (recordId) => {
+      try {
+        const record = await fetch(`${API_BASE}/api/v1/assignments/${recordId}`, { headers: authHeaders() }).then((r) => {
+          if (!r.ok) throw new Error(`Load failed (${r.status})`)
+          return r.json()
+        })
+        const c = record.content ?? {}
+        const key = `ASG-${seq}`
+        setSeq((s) => s + 1)
+        setIssues((prev) => [
+          {
+            key,
+            aim: c.aim ?? 'Imported assignment',
+            description: '',
+            subject: record.input?.subject ?? 'DBMS',
+            experimentNumber: c.experimentNumber ? String(c.experimentNumber) : '',
+            technology: record.input?.technology ?? '',
+            difficulty: 'Intermediate',
+            templateId: record.template?.id ?? '',
+            status: 'done',
+            error: '',
+            record,
+            createdAt: record.createdAt ?? new Date().toISOString(),
+          },
+          ...prev,
+        ])
+        setHistoryOpen(false)
+        setSelectedKey(key)
+      } catch (err) {
+        pushToast('error', 'Import failed', err instanceof Error ? err.message : String(err))
+      }
+    },
+    [pushToast, seq],
+  )
+
   async function downloadHtml(issue) {
     const recordId = issue.record?.id
     if (!recordId) return
     try {
       const res = await fetch(`${API_BASE}/api/v1/assignments/${recordId}/html`, {
+        headers: authHeaders(),
         signal: AbortSignal.timeout(180000),
       })
       if (res.status === 404) {
@@ -550,7 +661,23 @@ export default function App() {
           <span className="text-[15px] font-semibold tracking-tight">AssignmentAI</span>
         </span>
         <span className="hidden rounded bg-[#E9F2FF] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#0055CC] sm:inline">Workspace</span>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-1.5">
+          <button
+            onClick={() => setHistoryOpen(true)}
+            title="Server history"
+            className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-[#44546F] hover:bg-[#F1F2F4]"
+          >
+            <Icon name="clock" className="h-4 w-4" />
+            <span className="hidden sm:inline">History</span>
+          </button>
+          <button
+            onClick={() => setTemplatesOpen(true)}
+            title="Templates"
+            className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-[#44546F] hover:bg-[#F1F2F4]"
+          >
+            <Icon name="grid" className="h-4 w-4" />
+            <span className="hidden sm:inline">Templates</span>
+          </button>
           <button
             onClick={() => {
               setPrefill(null)
@@ -561,7 +688,24 @@ export default function App() {
             <Icon name="plus" className="h-4 w-4" />
             Create
           </button>
-          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#6E5DC6] text-[12px] font-bold text-white">YO</span>
+          {session ? (
+            <button
+              onClick={() => { saveSession(null); pushToast('success', 'Logged out', 'Session cleared on this device.') }}
+              title={`Logged in as ${session.email} — click to log out`}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-[#6E5DC6] text-[12px] font-bold text-white"
+            >
+              {(session.email?.[0] ?? 'U').toUpperCase()}
+            </button>
+          ) : (
+            <button
+              onClick={() => setLoginOpen(true)}
+              title="Log in"
+              className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-[#44546F] hover:bg-[#F1F2F4]"
+            >
+              <Icon name="user" className="h-4 w-4" />
+              <span className="hidden sm:inline">Log in</span>
+            </button>
+          )}
         </div>
       </header>
 
@@ -635,6 +779,30 @@ export default function App() {
             setPrefill(null)
           }}
           onSubmit={createIssue}
+        />
+      )}
+
+      {templatesOpen && (
+        <TemplatesModal
+          templates={templates}
+          onRefresh={refreshTemplates}
+          notify={pushToast}
+          onClose={() => setTemplatesOpen(false)}
+        />
+      )}
+
+      {historyOpen && (
+        <HistoryModal onImport={importRecordToBoard} onClose={() => setHistoryOpen(false)} />
+      )}
+
+      {loginOpen && (
+        <LoginModal
+          onClose={() => setLoginOpen(false)}
+          onLogin={(s) => {
+            saveSession(s)
+            setLoginOpen(false)
+            pushToast('success', 'Logged in', s.email)
+          }}
         />
       )}
 
@@ -730,7 +898,7 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
     try {
       const res = await fetch(`${apiBase}/api/v1/assignments/${recordId}/${kind}`, {
         method: kind === 'pdf' ? 'POST' : 'GET',
-        headers: { 'content-type': 'application/json' },
+        headers: authHeaders({ 'content-type': 'application/json' }),
         body: kind === 'pdf' ? '{}' : undefined,
         signal: AbortSignal.timeout(180000),
       })
@@ -767,7 +935,7 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
     try {
       const res = await fetch(`${apiBase}/api/v1/assignments/${recordId}/regenerate-section`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: authHeaders({ 'content-type': 'application/json' }),
         body: JSON.stringify({ section }),
         signal: AbortSignal.timeout(180000),
       })
@@ -800,7 +968,7 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
     try {
       const res = await fetch(`${apiBase}/api/v1/assignments/${recordId}`, {
         method: 'PUT',
-        headers: { 'content-type': 'application/json' },
+        headers: authHeaders({ 'content-type': 'application/json' }),
         body: JSON.stringify({ content: next }),
         signal: AbortSignal.timeout(60000),
       })
@@ -822,7 +990,10 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
     setLatexBusy(true)
     setLatexError('')
     try {
-      const res = await fetch(`${apiBase}/api/v1/assignments/${recordId}/latex`, { signal: AbortSignal.timeout(60000) })
+      const res = await fetch(`${apiBase}/api/v1/assignments/${recordId}/latex`, {
+        headers: authHeaders(),
+        signal: AbortSignal.timeout(60000),
+      })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(failMessage(res, data))
       setLatex(data.latex ?? '')
@@ -841,7 +1012,7 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
     try {
       const res = await fetch(`${apiBase}/api/v1/assignments/${recordId}/latex`, {
         method: 'PUT',
-        headers: { 'content-type': 'application/json' },
+        headers: authHeaders({ 'content-type': 'application/json' }),
         body: JSON.stringify({ latex }),
         signal: AbortSignal.timeout(60000),
       })
@@ -1179,6 +1350,227 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
         </div>
       </aside>
     </>
+  )
+}
+
+/* ------------------------------- modal shell ------------------------------ */
+
+function ModalShell({ title, onClose, wide, children }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-[#091E42]/55" onClick={onClose} />
+      <div className={`relative flex max-h-[92vh] w-full ${wide ? 'max-w-2xl' : 'max-w-lg'} flex-col overflow-hidden rounded-xl bg-white shadow-[0_16px_48px_rgba(9,30,66,0.32)]`}>
+        <div className="flex items-center gap-2 border-b border-[#DFE1E6] px-5 py-3.5">
+          <h2 className="text-[15px] font-semibold">{title}</h2>
+          <button onClick={onClose} className="ml-auto rounded p-1.5 text-[#626F86] hover:bg-[#F1F2F4]" title="Close">
+            <Icon name="x" className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
+      </div>
+    </div>
+  )
+}
+
+const modalInputCls =
+  'w-full rounded-md border border-[#DFE1E6] bg-white px-2.5 py-2 text-[13px] placeholder:text-[#8590A2] hover:border-[#8590A2] focus:border-[#0C66E4] focus:outline-none focus:ring-1 focus:ring-[#0C66E4]'
+const modalLabelCls = 'mb-1 block text-[12px] font-semibold text-[#44546F]'
+
+/* ------------------------------- login modal ------------------------------ */
+
+function LoginModal({ onClose, onLogin }) {
+  const [mode, setMode] = useState('login')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [name, setName] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function submit(e) {
+    e.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/auth/${mode}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(mode === 'register' ? { email, password, name } : { email, password }),
+        signal: AbortSignal.timeout(30000),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error ?? `Auth failed (${res.status})`)
+      onLogin({ token: data.token, email })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <ModalShell title={mode === 'login' ? 'Log in' : 'Register'} onClose={onClose}>
+      <form onSubmit={submit}>
+        {mode === 'register' && (
+          <div className="mb-3">
+            <label className={modalLabelCls}>Name</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} className={modalInputCls} />
+          </div>
+        )}
+        <div className="mb-3">
+          <label className={modalLabelCls}>Email</label>
+          <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={modalInputCls} />
+        </div>
+        <div className="mb-3">
+          <label className={modalLabelCls}>Password (min 8 chars)</label>
+          <input type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} className={modalInputCls} />
+        </div>
+        {error && <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-[13px] font-medium text-red-700">{error}</p>}
+        <button type="submit" disabled={busy} className="rounded-md bg-[#0C66E4] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#0055CC] disabled:opacity-70">
+          {busy ? 'Working…' : mode === 'login' ? 'Log in' : 'Register'}
+        </button>
+        <button type="button" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError('') }} className="ml-3 text-[13px] text-[#0C66E4] hover:underline">
+          {mode === 'login' ? 'Need an account? Register' : 'Have an account? Log in'}
+        </button>
+      </form>
+      <p className="mt-3 text-[12px] text-[#8590A2]">Tokens attach to every request once logged in. The API enforces login only when AUTH_REQUIRED=1.</p>
+    </ModalShell>
+  )
+}
+
+/* ------------------------------ templates modal ---------------------------- */
+
+function TemplatesModal({ templates, onRefresh, notify, onClose }) {
+  const [name, setName] = useState('')
+  const [file, setFile] = useState(null)
+  const [msg, setMsg] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function create(e) {
+    e.preventDefault()
+    if (name.trim().length < 3) { setMsg('Name needs at least 3 characters.'); return }
+    setBusy(true)
+    setMsg('')
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/templates`, {
+        method: 'POST',
+        headers: authHeaders({ 'content-type': 'application/json' }),
+        body: JSON.stringify({ name: name.trim() }),
+        signal: AbortSignal.timeout(30000),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error ?? `Create failed (${res.status})`)
+      setName('')
+      onRefresh()
+      notify('success', 'Template created', `${data.template.name} v${data.template.version} (draft).`)
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function importPdf(e) {
+    e.preventDefault()
+    if (!file) { setMsg('Choose a sample PDF first.'); return }
+    setBusy(true)
+    setMsg('')
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      if (name.trim()) form.append('name', name.trim())
+      const res = await fetch(`${API_BASE}/api/v1/templates/from-pdf`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: form,
+        signal: AbortSignal.timeout(120000),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error ?? `Import failed (${res.status})`)
+      setFile(null)
+      onRefresh()
+      notify('success', 'Template draft saved', `${data.template.name} — detected: ${(data.analysis?.detectedHeadings ?? []).join(', ') || 'no headings'}.`)
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <ModalShell title="Templates" wide onClose={onClose}>
+      <div className="flex flex-col gap-2">
+        {templates.map((t) => (
+          <div key={`${t.id}@${t.version}`} className="flex items-center justify-between gap-2 rounded-lg border border-[#DFE1E6] px-3 py-2">
+            <div>
+              <p className="text-[13px] font-semibold">{t.name}</p>
+              <p className="font-mono text-[11px] text-[#8590A2]">{t.id} · tenant {t.tenantId ?? '—'}</p>
+            </div>
+            <span className="rounded-full bg-[#E9F2FF] px-2 py-0.5 font-mono text-[11px] font-semibold text-[#0055CC]">
+              v{t.version} · {t.status}
+            </span>
+          </div>
+        ))}
+        {templates.length === 0 && <p className="text-[13px] text-[#626F86]">No templates found.</p>}
+      </div>
+      <div className="mt-4 border-t border-[#EBECF0] pt-4">
+        <p className="text-[13px] font-semibold">New blank template</p>
+        <form onSubmit={create} className="mt-2 flex gap-2">
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Template name" className={modalInputCls} />
+          <button type="submit" disabled={busy} className="shrink-0 rounded-md bg-[#0C66E4] px-3 py-2 text-[13px] font-semibold text-white hover:bg-[#0055CC] disabled:opacity-70">
+            Create
+          </button>
+        </form>
+      </div>
+      <div className="mt-4 border-t border-[#EBECF0] pt-4">
+        <p className="text-[13px] font-semibold">Import from sample PDF</p>
+        <p className="mt-0.5 text-[12px] text-[#626F86]">Structure is extracted into a v1 draft for review. Uses the name above when set.</p>
+        <form onSubmit={importPdf} className="mt-2 flex flex-col gap-2">
+          <input type="file" accept="application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="text-[13px]" />
+          <button type="submit" disabled={busy} className="inline-flex w-fit items-center gap-1.5 rounded-md bg-[#0C66E4] px-3 py-2 text-[13px] font-semibold text-white hover:bg-[#0055CC] disabled:opacity-70">
+            <Icon name="upload" className="h-4 w-4" />
+            {busy ? 'Analyzing…' : 'Analyze & save draft'}
+          </button>
+        </form>
+      </div>
+      {msg && <p className="mt-3 break-words text-[13px] text-red-700">{msg}</p>}
+    </ModalShell>
+  )
+}
+
+/* ------------------------------ history modal ------------------------------ */
+
+function HistoryModal({ onImport, onClose }) {
+  const [items, setItems] = useState(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/v1/assignments`, { headers: authHeaders(), signal: AbortSignal.timeout(30000) })
+      .then((r) => r.json())
+      .then((d) => setItems(d.assignments ?? []))
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+  }, [])
+
+  return (
+    <ModalShell title="Server history" wide onClose={onClose}>
+      {error && <p className="rounded-md bg-red-50 px-3 py-2 text-[13px] font-medium text-red-700">{error}</p>}
+      {items === null && !error && <p className="text-[13px] text-[#626F86]">Loading…</p>}
+      {items !== null && items.length === 0 && <p className="text-[13px] text-[#626F86]">Nothing on the server yet.</p>}
+      <div className="flex flex-col gap-2">
+        {(items ?? []).map((a) => (
+          <div key={a.id} className="flex items-center justify-between gap-2 rounded-lg border border-[#DFE1E6] px-3 py-2">
+            <div className="min-w-0">
+              <p className="truncate text-[13px] font-semibold">{a.title || a.aim}</p>
+              <p className="truncate font-mono text-[11px] text-[#8590A2]">
+                {a.id} · {a.template?.id} v{a.template?.version} · {a.createdAt ? new Date(a.createdAt).toLocaleString() : ''}
+              </p>
+            </div>
+            <button onClick={() => onImport(a.id)} className="shrink-0 rounded-md border border-[#DFE1E6] px-2.5 py-1.5 text-[13px] font-medium text-[#44546F] hover:bg-[#F7F8FA]">
+              Open in board
+            </button>
+          </div>
+        ))}
+      </div>
+    </ModalShell>
   )
 }
 
