@@ -58,8 +58,11 @@ function facultyTable(t) {
   ];
 }
 
-export async function renderDocx(content, template) {
+export async function renderDocx(content, template, options = {}) {
   const t = template?.template ?? {};
+  const includeVivaTitle = options.includeVivaTitle === true;
+  const typedConclusion = options.typedConclusion !== false;
+  const handwrite = [new Paragraph({ text: "" }), new Paragraph({ text: "" }), new Paragraph({ text: "" })];
   const headerImg = assetBuffer(t.header?.image);
   const wmImg = assetBuffer(t.watermark?.image);
   const footerText = t.footer?.text ?? "";
@@ -119,7 +122,15 @@ export async function renderDocx(content, template) {
       );
     }
   }
-  children.push(h2("Conclusion"), body(content.conclusion));
+  children.push(h2("Conclusion"));
+  if (typedConclusion) children.push(body(content.conclusion));
+  else for (const p of handwrite) children.push(p);
+  // Viva Questions is a HEADING ONLY when enabled — questions are handwritten by faculty, never generated.
+  if (includeVivaTitle) {
+    children.push(h2("Viva Questions"));
+    for (const p of handwrite) children.push(p);
+    children.push(new Paragraph({ text: "" }));
+  }
   for (const node of facultyTable(t)) children.push(node);
 
   const frame = { style: BorderStyle.SINGLE, size: 12, color: "000000", space: 24 };

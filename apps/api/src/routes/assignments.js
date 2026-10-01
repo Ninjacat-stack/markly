@@ -22,6 +22,9 @@ assignmentsRouter.post("/generate", async (req, res) => {
   }
   const input = parsed.data;
   const profile = getSubjectProfile(input.subject);
+  // Presentation flags stay Node-side (rendering only); the AI service gets content input alone.
+  const { includeVivaTitle, typedConclusion, ...aiInput } = input;
+  const options = { includeVivaTitle: includeVivaTitle ?? false, typedConclusion: typedConclusion ?? true };
   // Template lookup from tenant seeds (requested templateId or the active default).
   const seed = (input.templateId && getTemplateDoc(input.templateId)) || getDefaultTemplateDoc();
   const template = seed
@@ -30,7 +33,7 @@ assignmentsRouter.post("/generate", async (req, res) => {
 
   const aiBase = process.env.AI_SERVICE_URL ?? "http://127.0.0.1:8001";
   try {
-    const result = await generateViaAiService(input, aiBase);
+    const result = await generateViaAiService(aiInput, aiBase);
     const content = assignmentContentSchema.safeParse(result.content);
     if (!content.success) {
       return res
@@ -44,6 +47,7 @@ assignmentsRouter.post("/generate", async (req, res) => {
       input,
       subjectProfile: profile,
       template,
+      options,
       content: content.data,
       sources: result.sources ?? [],
       provenance: {
@@ -105,7 +109,27 @@ assignmentsRouter.get("/:id/html", (req, res) => {
   const record = getRecord(req.params.id);
   if (!record) return res.status(404).json({ error: "Not found" });
   const seed = getTemplateDoc(record.template?.id) || getDefaultTemplateDoc();
-  res.type("html").send(renderHtml(record.content, seed));
+  res.type("html").send(renderHtml(record.content, seed, record.options));
+});
+
+// Presentation options can change after generation (viva heading, typed/handwritten conclusion).
+assignmentsRouter.patch("/:id/options", (req, res) => {
+  const record = getRecord(req.params.id);
+  if (!record) return res.status(404).json({ error: "Not found" });
+  const { includeVivaTitle, typedConclusion } = req.body ?? {};
+  if (includeVivaTitle !== undefined && typeof includeVivaTitle !== "boolean") {
+    return res.status(400).json({ error: "includeVivaTitle must be a boolean" });
+  }
+  if (typedConclusion !== undefined && typeof typedConclusion !== "boolean") {
+    return res.status(400).json({ error: "typedConclusion must be a boolean" });
+  }
+  record.options = {
+    includeVivaTitle: includeVivaTitle ?? record.options?.includeVivaTitle ?? false,
+    typedConclusion: typedConclusion ?? record.options?.typedConclusion ?? true,
+  };
+  record.updatedAt = new Date().toISOString();
+  saveRecord(record);
+  return res.json(record);
 });
 
 // Phase 3: regenerate one section; everything else stays untouched.
@@ -164,7 +188,7 @@ assignmentsRouter.get("/:id/docx", async (req, res) => {
   try {
     const { renderDocx } = await import("../render/docx.js");
     const seed = getTemplateDoc(record.template?.id) || getDefaultTemplateDoc();
-    const buf = await renderDocx(record.content, seed);
+    const buf = await renderDocx(record.content, seed, record.options);
     res.setHeader("content-type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     res.setHeader("content-disposition", `attachment; filename="assignment-${record.id}.docx"`);
     return res.send(Buffer.from(buf));
@@ -180,7 +204,7 @@ assignmentsRouter.get("/:id/latex", async (req, res) => {
   if (record.latexOverride) return res.json({ latex: record.latexOverride, edited: true });
   const { renderLatex } = await import("../render/latex.js");
   const seed = getTemplateDoc(record.template?.id) || getDefaultTemplateDoc();
-  return res.json({ latex: renderLatex(record.content, seed), edited: false });
+  return res.json({ latex: renderLatex(record.content, seed, record.options), edited: false });
 });
 
 // Phase 4: save user-edited LaTeX (treated as untrusted input to the compiler).
@@ -207,7 +231,7 @@ assignmentsRouter.post("/:id/pdf", async (req, res) => {
       import("../lib/compile.js"),
     ]);
     const seed = getTemplateDoc(record.template?.id) || getDefaultTemplateDoc();
-    const tex = record.latexOverride ?? renderLatex(record.content, seed);
+    const tex = record.latexOverride ?? renderLatex(record.content, seed, record.options);
     const out = await compileLatexToPdf(tex, seed);
     if (!out.ok) return res.status(502).json({ error: out.error, log: out.log });
     try {

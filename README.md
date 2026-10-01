@@ -50,8 +50,9 @@ npm install && npm run dev                # :5173
 Open `:5173`: a workspace board (To Do / In Progress / Done, persisted locally).
 Create cards with aim + subject + template dropdown; the detail drawer shows
 sections, sources, document preview, per-section editing + regeneration, LaTeX
-editing, and DOCX/PDF/HTML export. Header has Templates manager, server History
-import, and Login. (`src/pages/*` are unwired reference variants.)
+editing, and DOCX/PDF/HTML export. Creation asks about viva heading (heading only,
+handwritten) and typed vs handwritten conclusion; both changeable later per card.
+Header has Templates manager, server History import, and Login. (`src/pages/*` are unwired reference variants.)
 
 ## Templates, header & watermark
 

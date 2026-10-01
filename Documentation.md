@@ -100,6 +100,7 @@ Login token persists in `localStorage` (`assignmentai_token`).
 - `GET /assignments` → history summaries; `GET /assignments/:id` → full record
 - `POST /assignments/:id/regenerate-section` `{section, additionalInstructions?}` → updated record
 - `PUT /assignments/:id` `{content}` → validated save (marks `editedByUser`)
+- `PATCH /assignments/:id/options` `{includeVivaTitle?, typedConclusion?}` → presentation flags
 - `GET /assignments/:id/html` → printable document (header + 50% watermark every page)
 - `GET /assignments/:id/docx` → .docx download; `GET /:id/latex` → `{latex, edited}`; `PUT /:id/latex` → save override; `POST /:id/pdf` → compiled PDF or explicit 502
 - `GET /templates`, `GET /templates/:id[?version=N]`, `POST /templates`, `PUT /templates/:id` (forks new version), `POST /templates/from-pdf`
@@ -125,6 +126,11 @@ AI service: `GET /health`, `POST /v1/generate`, `POST /v1/regenerate-section`,
   the bottom (`\vfill` in LaTeX). Table content is template data — edit the seed or
   `PUT /templates/:id` (new version), never the code. No viva section is generated
   (product rule), regardless of sample layouts.
+- Presentation flags per assignment (`options`, changeable anytime via
+  `PATCH /assignments/:id/options`): `includeVivaTitle` appends a "Viva Questions"
+  HEADING ONLY for faculty handwriting (questions are never generated);
+  `typedConclusion: false` renders the compulsory Conclusion heading with blank
+  writing space instead of model text. Set at creation via checkboxes.
 - Jobs: `pending → researching → generating → validating → completed/failed`
   (+ `rendering` reserved). In-process queue by default; BullMQ transport when
   `REDIS_URL` + `BULLMQ_ENABLED=1` is set (status map stays in-process — move to Redis/Mongo for multi-instance).

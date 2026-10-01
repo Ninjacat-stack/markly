@@ -130,7 +130,8 @@ export async function runGenerationJob(input, jobId) {
     const profile = getSubjectProfile(input.subject);
     const seed = (input.templateId && getTemplateDoc(input.templateId)) || getDefaultTemplateDoc();
     setStatus(job, "generating", { progress: 40 });
-    const result = await generateViaAiService(input, aiBase);
+    const { includeVivaTitle, typedConclusion, ...aiInput } = input;
+    const result = await generateViaAiService(aiInput, aiBase);
     setStatus(job, "validating", { progress: 75 });
     const content = assignmentContentSchema.safeParse(result.content);
     if (!content.success) throw new Error("AI service returned invalid Assignment JSON");
@@ -143,6 +144,10 @@ export async function runGenerationJob(input, jobId) {
         ? { id: seed.template.id, version: seed.template.version, name: seed.template.name }
         : { id: "default-v1", version: 1 },
       content: content.data,
+      options: {
+        includeVivaTitle: input.includeVivaTitle ?? false,
+        typedConclusion: input.typedConclusion ?? true,
+      },
       sources: result.sources ?? [],
       provenance: {
         provider: result.provider,

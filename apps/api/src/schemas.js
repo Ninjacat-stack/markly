@@ -10,6 +10,11 @@ export const generateInputSchema = z.object({
   templateId: z.string().trim().max(64).optional().nullable(),
   difficulty: z.string().trim().max(32).optional().nullable(),
   additionalInstructions: z.string().trim().max(2000).optional().nullable(),
+  // Presentation flags (never affect LLM content, only rendering):
+  // - includeVivaTitle: append a "Viva Questions" HEADING ONLY (faculty handwrites the Qs; never generated).
+  // - typedConclusion: false renders the compulsory Conclusion heading with blank writing space instead of model text.
+  includeVivaTitle: z.boolean().default(false),
+  typedConclusion: z.boolean().default(true),
 });
 
 const stepSchema = z.object({

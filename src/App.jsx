@@ -541,7 +541,9 @@ export default function App() {
         experimentNumber: form.experimentNumber.trim(),
         technology: form.technology.trim(),
         difficulty: form.difficulty,
-        templateId: form.templateId || undefined,
+          templateId: form.templateId || undefined,
+          includeVivaTitle: form.includeVivaTitle,
+          typedConclusion: form.typedConclusion,
         status: 'inprogress',
         error: '',
         stale: false,
@@ -876,6 +878,9 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
   const [latex, setLatex] = useState(null)
   const [latexBusy, setLatexBusy] = useState(false)
   const [latexError, setLatexError] = useState('')
+  const [optBusy, setOptBusy] = useState(false)
+  const [optError, setOptError] = useState('')
+  const [previewKey, setPreviewKey] = useState(0)
   const content = issue.record?.content ?? null
   const prov = issue.record?.provenance
   const prio = priorityOf(issue.difficulty)
@@ -1004,6 +1009,29 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
     }
   }
 
+  async function saveOptions(patch) {
+    const recordId = issue.record?.id
+    if (!recordId) return
+    setOptBusy(true)
+    setOptError('')
+    try {
+      const res = await fetch(`${apiBase}/api/v1/assignments/${recordId}/options`, {
+        method: 'PATCH',
+        headers: authHeaders({ 'content-type': 'application/json' }),
+        body: JSON.stringify(patch),
+        signal: AbortSignal.timeout(30000),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error ?? `Options save failed (${res.status})`)
+      onRecordUpdate(issue.key, data)
+      setPreviewKey((k) => k + 1)
+    } catch (err) {
+      setOptError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setOptBusy(false)
+    }
+  }
+
   async function saveLatex() {
     const recordId = issue.record?.id
     if (!recordId || latex === null) return
@@ -1117,6 +1145,32 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
                 <Icon name="refresh" className="h-4 w-4" />
                 Regenerate assignment
               </button>
+            </div>
+          )}
+
+          {content && (
+            <div className="mt-3 flex flex-col gap-1.5 rounded-lg border border-[#DFE1E6] bg-[#FAFBFC] px-3.5 py-3">
+              <label className="flex cursor-pointer items-center gap-2 text-[13px]">
+                <input
+                  type="checkbox"
+                  checked={issue.record.options?.includeVivaTitle === true}
+                  disabled={optBusy}
+                  onChange={(e) => saveOptions({ includeVivaTitle: e.target.checked })}
+                />
+                Viva Questions heading
+                <span className="text-[12px] text-[#8590A2]">(handwritten by faculty)</span>
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 text-[13px]">
+                <input
+                  type="checkbox"
+                  checked={issue.record.options?.typedConclusion !== false}
+                  disabled={optBusy}
+                  onChange={(e) => saveOptions({ typedConclusion: e.target.checked })}
+                />
+                Typed conclusion
+                <span className="text-[12px] text-[#8590A2]">(uncheck for handwriting space)</span>
+              </label>
+              {optError && <p className="break-words text-[12px] text-red-700">{optError}</p>}
             </div>
           )}
 
@@ -1322,7 +1376,7 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
                   <SectionHeading icon="file">Document preview</SectionHeading>
                   <p className="mt-1 text-[12px] text-[#626F86]">Department header and watermark applied on every page.</p>
                   <div className="mt-2 overflow-hidden rounded-lg border border-[#DFE1E6]">
-                    <iframe title={`Document preview for ${issue.key}`} src={`${apiBase}/api/v1/assignments/${issue.record.id}/html`} className="h-[420px] w-full bg-white" />
+                    <iframe title={`Document preview for ${issue.key}`} key={previewKey} src={`${apiBase}/api/v1/assignments/${issue.record.id}/html`} className="h-[420px] w-full bg-white" />
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2">
                     <button onClick={onDownload} className="inline-flex items-center gap-1.5 rounded-md border border-[#DFE1E6] px-2.5 py-1.5 text-[13px] font-medium text-[#44546F] hover:bg-[#F7F8FA]">
@@ -1585,6 +1639,8 @@ function CreateModal({ initial, templates = [], onClose, onSubmit }) {
     technology: initial?.technology ?? '',
     difficulty: initial?.difficulty ?? 'Intermediate',
     templateId: initial?.templateId ?? '',
+    includeVivaTitle: initial?.includeVivaTitle ?? false,
+    typedConclusion: initial?.typedConclusion ?? true,
   })
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -1709,6 +1765,23 @@ function CreateModal({ initial, templates = [], onClose, onSubmit }) {
                 </option>
               ))}
             </select>
+          </div>
+
+          <div className="mt-3 flex flex-col gap-2 rounded-md border border-[#DFE1E6] bg-[#FAFBFC] px-3 py-2.5">
+            <label className="flex cursor-pointer items-start gap-2 text-[13px]">
+              <input type="checkbox" checked={form.includeVivaTitle} onChange={(e) => set('includeVivaTitle', e.target.checked)} className="mt-0.5" />
+              <span>
+                Include Viva Questions heading
+                <span className="block text-[12px] text-[#626F86]">Heading only — questions are handwritten by faculty, never generated. Off for most experiments.</span>
+              </span>
+            </label>
+            <label className="flex cursor-pointer items-start gap-2 text-[13px]">
+              <input type="checkbox" checked={form.typedConclusion} onChange={(e) => set('typedConclusion', e.target.checked)} className="mt-0.5" />
+              <span>
+                Type the conclusion
+                <span className="block text-[12px] text-[#626F86]">Uncheck to leave handwriting space (conclusion itself is compulsory).</span>
+              </span>
+            </label>
           </div>
 
           {error && <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-[13px] font-medium text-red-700">{error}</p>}

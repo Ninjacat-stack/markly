@@ -46,8 +46,14 @@ function facultyTable(t) {
     <table class="faculty"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`;
 }
 
-export function renderHtml(content, template) {
+export function renderHtml(content, template, options = {}) {
+  const includeVivaTitle = options.includeVivaTitle === true;
+  const typedConclusion = options.typedConclusion !== false;
   const t = template?.template ?? {};
+  const conclusionHtml = typedConclusion
+    ? `<p>${escapeHtml(content.conclusion)}</p>`
+    : `<div class="handwrite"></div>`;
+  const vivaHtml = includeVivaTitle ? `<h2>Viva Questions</h2>\n    <div class="handwrite"></div>` : "";
   const page = t.page ?? {};
   const margin = page.margin ?? {};
   const typo = t.typography ?? {};
@@ -115,6 +121,7 @@ export function renderHtml(content, template) {
   .faculty { width: 100%; border-collapse: collapse; margin-top: 8px; }
   .faculty th, .faculty td { border: 1px solid #333; padding: 6px 8px; font-size: 10.5pt; text-align: left; vertical-align: top; }
   .faculty td { height: 44px; }
+  .handwrite { height: 140px; }
   main {
     position: relative; z-index: 1;
     padding: ${escapeHtml(margin.top ?? "110px")} ${escapeHtml(margin.right ?? "18mm")} ${escapeHtml(margin.bottom ?? "20mm")} ${escapeHtml(margin.left ?? "18mm")};
@@ -144,7 +151,8 @@ export function renderHtml(content, template) {
     <h2>Procedure / Steps</h2>
     ${stepsList(content.steps)}
     <h2>Conclusion</h2>
-    <p>${escapeHtml(content.conclusion)}</p>
+    ${conclusionHtml}
+    ${vivaHtml}
     ${facultyTable(t)}
   </main>
 </body>

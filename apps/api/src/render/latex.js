@@ -52,8 +52,13 @@ ${rows}
 \\end{center}`;
 }
 
-export function renderLatex(content, template) {
+export function renderLatex(content, template, options = {}) {
   const t = template?.template ?? {};
+  const includeVivaTitle = options.includeVivaTitle === true;
+  const typedConclusion = options.typedConclusion !== false;
+  const conclusionTex = typedConclusion ? escapeLatex(content.conclusion) : "\\vspace{45mm}";
+  // Viva Questions is a HEADING ONLY when enabled — questions are handwritten by faculty, never generated.
+  const vivaTex = includeVivaTitle ? "\\section*{Viva Questions}\n\\vspace{45mm}" : "";
   const hasHeader = Boolean(t.header?.image);
   const hasWatermark = Boolean(t.watermark?.image);
   const footerText = escapeLatex(t.footer?.text ?? "");
@@ -106,7 +111,9 @@ ${content.theory.map((p) => escapeLatex(p)).join("\n\n")}
 ${steps}
 
 \\section*{Conclusion}
-${escapeLatex(content.conclusion)}
+${conclusionTex}
+
+${vivaTex}
 
 ${facultyTable(t)}
 \\end{document}
