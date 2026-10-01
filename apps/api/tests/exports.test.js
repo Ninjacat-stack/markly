@@ -35,6 +35,11 @@ describe("LaTeX renderer", () => {
     assert.ok(tex.includes("opacity=0.5"), "watermark must use opacity=0.5");
     assert.ok(tex.includes("fancyhead"), "header must be configured");
   });
+  it("uses a paragraph break (not \\\\\\\\ line breaks) under the title", () => {
+    const tex = renderLatex(doc, getDefaultTemplate());
+    assert.ok(!tex.includes("\\\\\\\\Experiment"), "double line-breaks are fatal under -halt-on-error");
+    assert.ok(tex.includes("{\\large Experiment No. 7}"), "experiment line missing");
+  });
   it("spans the header full width, keeps footer to page number only, left-aligns faculty title", () => {
     const tex = renderLatex(doc, getDefaultTemplate());
     assert.ok(tex.includes("\\includegraphics[width=\\textwidth,keepaspectratio]{header.png}"), "header must span full text width");

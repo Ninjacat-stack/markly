@@ -94,7 +94,7 @@ ${hasWatermark ? `\\node[opacity=${WATERMARK_OPACITY}] at (current page.center) 
 \\begin{document}
 \\begin{center}
 {\\Large\\bfseries ${escapeLatex(content.title)}}
-${content.experimentNumber ? `\\\\\\\\Experiment No. ${escapeLatex(content.experimentNumber)}` : ""}
+${content.experimentNumber ? `\n{\\large Experiment No. ${escapeLatex(content.experimentNumber)}}` : ""}
 \\end{center}
 
 \\section*{Aim}
