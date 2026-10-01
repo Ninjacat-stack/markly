@@ -48,6 +48,7 @@ export const Template = model(
       assets: Schema.Types.Mixed,
       watermark: Schema.Types.Mixed,
       headerFooter: Schema.Types.Mixed,
+      facultyTable: Schema.Types.Mixed,
       status: { type: String, default: "draft" },
     },
     { timestamps: true },
