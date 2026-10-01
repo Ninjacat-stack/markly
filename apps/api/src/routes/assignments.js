@@ -75,6 +75,7 @@ assignmentsRouter.post("/generate", async (req, res) => {
 
     return res.json(record);
   } catch (err) {
+    console.error(`[api] generation failed for aim "${input.aim.slice(0, 80)}":`, String(err));
     return res.status(502).json({ error: "Generation failed", details: String(err) });
   }
 });
