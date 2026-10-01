@@ -32,6 +32,20 @@ function stepsList(steps) {
     .join("")}</ol>`;
 }
 
+function facultyTable(t) {
+  const ft = t.facultyTable;
+  if (!ft?.columns?.length) return "";
+  const head = ft.columns.map((c) => `<th>${escapeHtml(c)}</th>`).join("");
+  const rows = (ft.rows ?? [])
+    .map(
+      (r) =>
+        `<tr>${ft.columns.map((_, i) => `<td>${escapeHtml(r[i] ?? "") || "&nbsp;"}</td>`).join("")}</tr>`,
+    )
+    .join("");
+  return `<h2>${escapeHtml(ft.title ?? "For Faculty Use")}</h2>
+    <table class="faculty"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`;
+}
+
 export function renderHtml(content, template) {
   const t = template?.template ?? {};
   const page = t.page ?? {};
@@ -94,6 +108,13 @@ export function renderHtml(content, template) {
     border-top: 1px solid #ccc; background: #fff;
   }
   .doc-footer .pagenum::after { counter-increment: page; content: counter(page); }
+  .page-frame {
+    position: fixed; top: 10mm; right: 10mm; bottom: 10mm; left: 10mm;
+    border: 1.5px solid #111; pointer-events: none; z-index: 2;
+  }
+  .faculty { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  .faculty th, .faculty td { border: 1px solid #333; padding: 6px 8px; font-size: 10.5pt; text-align: left; vertical-align: top; }
+  .faculty td { height: 44px; }
   main {
     position: relative; z-index: 1;
     padding: ${escapeHtml(margin.top ?? "110px")} ${escapeHtml(margin.right ?? "18mm")} ${escapeHtml(margin.bottom ?? "20mm")} ${escapeHtml(margin.left ?? "18mm")};
@@ -107,6 +128,7 @@ export function renderHtml(content, template) {
 </style>
 </head>
 <body>
+  <div class="page-frame"></div>
   <div class="doc-header">${headerImg}</div>
   <div class="watermark">${watermarkImg}</div>
   <div class="doc-footer">${escapeHtml(footer.text ?? "")}${footer.showPageNumber ? ' &nbsp;|&nbsp; Page <span class="pagenum"></span>' : ""}</div>
@@ -123,6 +145,7 @@ export function renderHtml(content, template) {
     ${stepsList(content.steps)}
     <h2>Conclusion</h2>
     <p>${escapeHtml(content.conclusion)}</p>
+    ${facultyTable(t)}
   </main>
 </body>
 </html>`;

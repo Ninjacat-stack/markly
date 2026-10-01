@@ -62,7 +62,7 @@ import, and Login. (`src/pages/*` are unwired reference variants.)
   drop in `tcet-header.png` (department banner) and `tcet-watermark.png` (shield logo).
   Missing files render as labeled placeholders so layout is reviewable without artwork.
 - **Watermark opacity is ALWAYS 50%** — enforced by `WATERMARK_OPACITY` in
-  `apps/api/src/render/html.js` (HTML) and `render/latex.js` (`\transparent{0.5}`).
+  `apps/api/src/render/html.js` (HTML) and `render/latex.js` (tikz node at page center).
   DOCX uses the PNG as-is (OOXML has no opacity flag), so save that file at 50% transparency.
 - `POST /api/v1/templates/from-pdf` drafts a template from a sample PDF (AI `/v1/analyze-template`).
 

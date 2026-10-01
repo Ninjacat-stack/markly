@@ -1,5 +1,6 @@
 import {
   AlignmentType,
+  BorderStyle,
   Document,
   Footer,
   Header,
@@ -8,8 +9,13 @@ import {
   HorizontalPositionRelativeFrom,
   ImageRun,
   Packer,
+  PageBorderDisplay,
+  PageBorderOffsetFrom,
   PageNumber,
   Paragraph,
+  Table,
+  TableCell,
+  TableRow,
   TextRun,
   VerticalPositionAlign,
   VerticalPositionRelativeFrom,
@@ -33,6 +39,24 @@ function assetBuffer(ref) {
 const bullet = (text) => new Paragraph({ text, bullet: { level: 0 } });
 const body = (text) => new Paragraph({ children: [new TextRun(text)] });
 const h2 = (text) => new Paragraph({ text, heading: HeadingLevel.HEADING_2 });
+
+// Static faculty grading table (template data, not LLM output), printed last.
+function facultyTable(t) {
+  const ft = t.facultyTable;
+  if (!ft?.columns?.length) return [];
+  const cell = (text, bold = false) =>
+    new TableCell({
+      children: [new Paragraph({ children: [new TextRun({ text: String(text ?? ""), bold })] })],
+    });
+  const rows = [
+    new TableRow({ children: ft.columns.map((c) => cell(c, true)) }),
+    ...(ft.rows ?? []).map((r) => new TableRow({ children: ft.columns.map((_, i) => cell(r[i] ?? "")) })),
+  ];
+  return [
+    new Paragraph({ text: ft.title ?? "For Faculty Use", heading: HeadingLevel.HEADING_2 }),
+    new Table({ rows }),
+  ];
+}
 
 export async function renderDocx(content, template) {
   const t = template?.template ?? {};
@@ -96,10 +120,25 @@ export async function renderDocx(content, template) {
     }
   }
   children.push(h2("Conclusion"), body(content.conclusion));
+  for (const node of facultyTable(t)) children.push(node);
 
+  const frame = { style: BorderStyle.SINGLE, size: 12, color: "000000", space: 24 };
   const doc = new Document({
     sections: [
       {
+        properties: {
+          page: {
+            size: { width: 11906, height: 16838 },
+            margins: { top: 1440, right: 1150, bottom: 1150, left: 1150, header: 720, footer: 720 },
+            borders: {
+              pageBorders: { display: PageBorderDisplay.ALL_PAGES, offsetFrom: PageBorderOffsetFrom.PAGE },
+              pageBorderTop: frame,
+              pageBorderLeft: frame,
+              pageBorderBottom: frame,
+              pageBorderRight: frame,
+            },
+          },
+        },
         headers: { default: new Header({ children: headerChildren }) },
         footers: {
           default: new Footer({

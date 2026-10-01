@@ -43,6 +43,15 @@ describe("HTML renderer", () => {
     assert.ok(html.includes("@page"), "@page print CSS missing");
   });
 
+  it("draws an every-page frame and prints the faculty table last", () => {
+    const html = renderHtml(doc, getDefaultTemplate());
+    assert.ok(html.includes('class="page-frame"'), "page frame div missing");
+    assert.ok(html.includes("For Faculty Use"), "faculty title missing");
+    assert.ok(html.includes("Marks Obtained"), "faculty row missing");
+    const concIdx = html.indexOf("<h2>Conclusion</h2>");
+    assert.ok(html.indexOf("For Faculty Use") > concIdx, "faculty table must come after conclusion");
+  });
+
   it("renders all required sections in order", () => {
     const html = renderHtml(doc, getDefaultTemplate());
     const order = ["Aim", "Objectives", "Theory", "Procedure / Steps", "Conclusion"];

@@ -1,8 +1,10 @@
 import { WATERMARK_OPACITY } from "./html.js";
 
 // LaTeX renderer (Phase 4). Same sections/order as the HTML renderer.
-// Watermark: eso-pic background on EVERY page + \transparent{0.5} (50% rule
-// enforced programmatically). Header: fancyhdr with the banner on every page.
+// Page frame: tikz border drawn on EVERY page. Watermark: tikz node anchored
+// at the exact page center with opacity 0.5 (50% rule enforced
+// programmatically). Header: fancyhdr with the banner on every page.
+// Faculty table: static template data flushed to the bottom of the last page.
 // Compile ONLY inside an isolated container (see lib/compile.js), never host pdflatex.
 
 export function escapeLatex(value) {
@@ -21,6 +23,33 @@ export function escapeLatex(value) {
 
 function safeVerbatim(code) {
   return String(code ?? "").replaceAll("\\end{verbatim}", "END VERBATIM");
+}
+
+function facultyTable(t) {
+  const ft = t.facultyTable;
+  if (!ft?.columns?.length) return "";
+  const n = ft.columns.length;
+  const col = `p{${(0.9 / n).toFixed(3)}\\textwidth}`;
+  const spec = `|${Array(n).fill(col).join("|")}|`;
+  const head = `${ft.columns.map((c) => `\\textbf{${escapeLatex(c)}}`).join(" & ")} \\\\ \\hline`;
+  const rows = (ft.rows ?? [])
+    .map((r) => {
+      const cells = ft.columns.map((_, i) => {
+        const v = escapeLatex(r[i] ?? "");
+        return v || "\\rule{0pt}{14mm}";
+      });
+      return `${cells.join(" & ")} \\\\ \\hline`;
+    })
+    .join("\n");
+  return `\\vfill
+\\begin{center}
+{\\bfseries ${escapeLatex(ft.title ?? "For Faculty Use")}}\\\\[2mm]
+{\\small\\begin{tabular}{${spec}}
+\\hline
+${head}
+${rows}
+\\end{tabular}}
+\\end{center}`;
 }
 
 export function renderLatex(content, template) {
@@ -44,13 +73,18 @@ ${s.code ? `\\begin{verbatim}\n${safeVerbatim(s.code)}\n\\end{verbatim}` : ""}`,
 \\usepackage{graphicx}
 \\usepackage{fancyhdr}
 \\usepackage{eso-pic}
-\\usepackage{transparent}
+\\usepackage{tikz}
 \\usepackage{hyperref}
 \\pagestyle{fancy}
 \\fancyhf{}
 ${hasHeader ? `\\fancyhead[C]{\\includegraphics[height=22mm,keepaspectratio]{header.png}}` : "\\fancyhead[C]{\\textbf{Assignment}}"}
 \\fancyfoot[C]{${footerText}${t.footer?.showPageNumber === false ? "" : " \\textbar\\ Page \\thepage"}}
-${hasWatermark ? `\\AddToShipoutPictureBG{\\AtPageCenter{\\transparent{${WATERMARK_OPACITY}}\\includegraphics[width=0.6\\paperwidth,keepaspectratio]{watermark.png}}}` : ""}
+\\AddToShipoutPictureBG{%
+\\begin{tikzpicture}[remember picture,overlay]
+\\draw[line width=1.2pt] ([xshift=10mm,yshift=-10mm]current page.north west) rectangle ([xshift=-10mm,yshift=10mm]current page.south east);
+${hasWatermark ? `\\node[opacity=${WATERMARK_OPACITY}] at (current page.center) {\\includegraphics[width=0.55\\paperwidth,keepaspectratio]{watermark.png}};` : ""}
+\\end{tikzpicture}%
+}
 \\begin{document}
 \\begin{center}
 {\\Large\\bfseries ${escapeLatex(content.title)}}
@@ -73,6 +107,8 @@ ${steps}
 
 \\section*{Conclusion}
 ${escapeLatex(content.conclusion)}
+
+${facultyTable(t)}
 \\end{document}
 `;
 }

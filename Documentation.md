@@ -118,8 +118,13 @@ AI service: `GET /health`, `POST /v1/generate`, `POST /v1/regenerate-section`,
   `updateTemplate()` always forks a new immutable version; old versions stay readable,
   so historical assignments never change. Mongo `Template` upserts are best-effort.
 - Watermark 50% rule: enforced in HTML (`WATERMARK_OPACITY`) and LaTeX
-  (`\transparent{0.5}` + every-page `eso-pic`). DOCX has no opacity flag — the PNG
+  (tikz node at exact page center, `opacity=0.5`). DOCX has no opacity flag — the PNG
   itself must be saved at 50% transparency (both PNGs are committed in `assets/`).
+- Page frame + faculty table: every renderer draws a border on all sides and prints
+  the static `facultyTable` ("For Faculty Use" / "Marks Obtained") last, flushed to
+  the bottom (`\vfill` in LaTeX). Table content is template data — edit the seed or
+  `PUT /templates/:id` (new version), never the code. No viva section is generated
+  (product rule), regardless of sample layouts.
 - Jobs: `pending → researching → generating → validating → completed/failed`
   (+ `rendering` reserved). In-process queue by default; BullMQ transport when
   `REDIS_URL` + `BULLMQ_ENABLED=1` is set (status map stays in-process — move to Redis/Mongo for multi-instance).

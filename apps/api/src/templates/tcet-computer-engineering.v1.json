@@ -43,6 +43,12 @@
     "footer": {
       "text": "Thakur College of Engineering & Technology — Department of Computer Engineering",
       "showPageNumber": true
+    },
+    "facultyTable": {
+      "$comment": "Static grading table printed last at the bottom of the document (content-free presentation, not LLM output).",
+      "title": "For Faculty Use",
+      "columns": ["Correction Parameters", "Formative Assessment (40%)", "Timely Completion of Practical", "Attendance & Learning Attitude"],
+      "rows": [["Marks Obtained", "", "", ""]]
     }
   }
 }

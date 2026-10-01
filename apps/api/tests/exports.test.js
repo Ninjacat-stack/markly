@@ -26,12 +26,22 @@ const doc = {
 };
 
 describe("LaTeX renderer", () => {
-  it("enforces 50% watermark via transparent package", () => {
+  it("draws a page border and centers the watermark at 50% via tikz", () => {
     assert.equal(WATERMARK_OPACITY, 0.5);
     const tex = renderLatex(doc, getDefaultTemplate());
-    assert.ok(tex.includes("\\transparent{0.5}"), "watermark must use \\transparent{0.5}");
-    assert.ok(tex.includes("AddToShipoutPictureBG"), "watermark must be on every page");
+    assert.ok(tex.includes("\\usepackage{tikz}"), "tikz package missing");
+    assert.ok(tex.includes("current page.north west"), "page border missing");
+    assert.ok(tex.includes("at (current page.center)"), "watermark must anchor to exact page center");
+    assert.ok(tex.includes("opacity=0.5"), "watermark must use opacity=0.5");
     assert.ok(tex.includes("fancyhead"), "header must be configured");
+  });
+  it("prints the faculty table last at the bottom", () => {
+    const tex = renderLatex(doc, getDefaultTemplate());
+    assert.ok(tex.includes("For Faculty Use"), "faculty title missing");
+    assert.ok(tex.includes("Marks Obtained"), "faculty row missing");
+    assert.ok(tex.includes("\\vfill"), "faculty table must flush to the bottom");
+    const concIdx = tex.indexOf("Conclusion");
+    assert.ok(tex.indexOf("For Faculty Use") > concIdx, "faculty table must come after conclusion");
   });
   it("escapes LaTeX special characters", () => {
     assert.equal(escapeLatex("100% sure & $5 #1 _x_"), "100\\% sure \\& \\$5 \\#1 \\_x\\_");

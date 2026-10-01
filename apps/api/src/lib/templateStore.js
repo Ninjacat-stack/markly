@@ -63,6 +63,7 @@ export function createTemplate(data) {
     header: { image: null, everyPage: true },
     watermark: { image: null, everyPage: true },
     footer: { text: "", showPageNumber: true },
+    facultyTable: null,
     ...data,
     id,
     version: 1,
