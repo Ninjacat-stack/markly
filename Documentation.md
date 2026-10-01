@@ -69,7 +69,7 @@ Open `:5173`. Health checks: `:8001/health`, `:4000/api/v1/health`
 API (`apps/api/.env`): `PORT` (4000), `AI_SERVICE_URL` (http://127.0.0.1:8001),
 `MONGODB_URI` (unset = in-memory), `RATE_LIMIT_PER_MIN` (60),
 `JWT_SECRET` (set in production), `AUTH_REQUIRED` (`1` enforces tokens, default open),
-`REDIS_URL` (unset = in-process jobs), `PDF_COMPILE_CMD` (default `docker run … texlive…`;
+`REDIS_URL` + `BULLMQ_ENABLED=1` (unset = in-process jobs), `PDF_COMPILE_CMD` (default `docker run … texlive…`;
 on Windows-with-WSL-Docker use `wsl docker run --rm -v "$(wslpath '{dir}'):/work" -w /work texlive/texlive:latest …`).
 
 AI (`services/ai-service/.env`): `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`
@@ -122,7 +122,7 @@ AI service: `GET /health`, `POST /v1/generate`, `POST /v1/regenerate-section`,
   itself must be saved at 50% transparency (both PNGs are committed in `assets/`).
 - Jobs: `pending → researching → generating → validating → completed/failed`
   (+ `rendering` reserved). In-process queue by default; BullMQ transport when
-  `REDIS_URL` is set (status map stays in-process — move to Redis/Mongo for multi-instance).
+  `REDIS_URL` + `BULLMQ_ENABLED=1` is set (status map stays in-process — move to Redis/Mongo for multi-instance).
 - Auth: bcrypt + JWT, open dev mode unless `AUTH_REQUIRED=1`.
 
 ## 8. Frontend pages

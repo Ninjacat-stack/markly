@@ -5,17 +5,40 @@ import { getSubjectProfile } from "./subjects.js";
 import { getDefaultTemplateDoc, getTemplateDoc } from "./templateStore.js";
 
 // Background generation jobs (Phase 9).
-// Transport: BullMQ + Redis when REDIS_URL is set, otherwise an in-process
-// queue. The jobs map below is the status source of truth either way
+// Transport: BullMQ + Redis when REDIS_URL and BULLMQ_ENABLED=1 are set,
+// otherwise an in-process queue. The jobs map below is the status source of truth either way
 // (multi-process BullMQ deployments should move status into Redis/Mongo).
 
 const jobs = new Map();
 let counter = 0;
 let bullmqQueue = null;
+let bullmqWorker = null;
 let bullmqWarned = false;
 
+// BullMQ enqueue must never hang the request: a configured-but-dead Redis
+// would otherwise retry forever and the job would sit in limbo.
+const ENQUEUE_TIMEOUT_MS = Number(process.env.BULLMQ_ENQUEUE_TIMEOUT_MS ?? 10000);
+
+// In-process runner: the throw below is for the BullMQ worker path only.
+// Here the failure is already recorded on the job, so swallow the rejection
+// (an unhandled rejection would crash the process / fail the test run).
+function runInProcess(input, jobId) {
+  runGenerationJob(input, jobId).catch(() => {});
+}
+
+export async function closeQueue() {
+  const q = bullmqQueue;
+  const w = bullmqWorker;
+  bullmqQueue = null;
+  bullmqWorker = null;
+  await Promise.allSettled([q?.close(), w?.close()]);
+}
+
 export function queueBackend() {
-  return process.env.REDIS_URL ? "bullmq" : "memory";
+  // BullMQ is explicit opt-in: a configured-but-dead Redis must never wedge
+  // enqueue calls or spam reconnect errors (ioredis retries in a tight loop
+  // on instant-refused connections). Default is the in-process queue.
+  return process.env.REDIS_URL && process.env.BULLMQ_ENABLED === "1" ? "bullmq" : "memory";
 }
 
 function setStatus(job, status, patch = {}) {
@@ -27,16 +50,25 @@ export function getJob(id) {
 }
 
 async function ensureBullmq() {
-  if (bullmqQueue || !process.env.REDIS_URL) return bullmqQueue;
+  if (bullmqQueue || queueBackend() !== "bullmq") return bullmqQueue;
   try {
     const { Queue, Worker } = await import("bullmq");
-    const connection = { url: process.env.REDIS_URL };
+    // Fail fast: never buffer commands while disconnected (that is what
+    // hung enqueue calls), and cap reconnect backoff so a dead Redis
+    // degrades to log noise instead of a log flood.
+    const connection = {
+      url: process.env.REDIS_URL,
+      enableOfflineQueue: false,
+      maxRetriesPerRequest: 2,
+      retryStrategy: (times) => Math.min(times * 500, 5000),
+    };
     bullmqQueue = new Queue("assignmentai-generation", { connection });
-    const worker = new Worker(
+    bullmqWorker = new Worker(
       "assignmentai-generation",
       async (bjob) => runGenerationJob(bjob.data.input, bjob.data.jobId),
       { connection },
     );
+    const worker = bullmqWorker;
     worker.on("failed", (bjob, err) => {
       const job = bjob?.data?.jobId ? jobs.get(bjob.data.jobId) : null;
       if (job && job.status !== "completed") setStatus(job, "failed", { error: String(err?.message ?? err) });
@@ -71,12 +103,20 @@ export async function createJob(type, input) {
   jobs.set(job.id, job);
   const q = await ensureBullmq();
   if (q) {
-    await q.add("generate", { jobId: job.id, input: job.input }).catch((err) => {
+    const add = q.add("generate", { jobId: job.id, input: job.input });
+    // Swallow the loser's late rejection (the race below already moved on).
+    add.catch(() => {});
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("BullMQ enqueue timed out")), ENQUEUE_TIMEOUT_MS),
+    );
+    try {
+      await Promise.race([add, timeout]);
+    } catch (err) {
       console.warn("[queue] BullMQ enqueue failed, running in-process:", String(err).slice(0, 200));
-      setImmediate(() => void runGenerationJob(job.input, job.id));
-    });
+      setImmediate(() => runInProcess(job.input, job.id));
+    }
   } else {
-    setImmediate(() => void runGenerationJob(job.input, job.id));
+    setImmediate(() => runInProcess(job.input, job.id));
   }
   return job;
 }

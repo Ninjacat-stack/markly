@@ -26,7 +26,7 @@
 | `helmet` | Security headers (`crossOriginResourcePolicy: false` so the preview iframe embeds) |
 | `jsonwebtoken` + `bcryptjs` | JWT auth, password hashing |
 | `multer` | PDF upload handling (memory storage, 25MB cap, type filter) |
-| `bullmq` | Background-job transport when `REDIS_URL` is set (lazy import; in-process otherwise) |
+| `bullmq` | Background-job transport when `REDIS_URL` + `BULLMQ_ENABLED=1` (lazy import; in-process otherwise) |
 
 ## 3. Frontend dependencies (root `package.json`)
 
@@ -60,7 +60,7 @@
 |---|---|---|
 | MongoDB 7 (container `mongo`) | Optional persistence; auto-creates DB/collections on first write — nothing to provision | `wsl -- docker run -d --name mongo --restart unless-stopped -p 27017:27017 -v mongodata:/data/db mongo:7`, then `MONGODB_URI=mongodb://127.0.0.1:27017/assignmentai` |
 | texlive image (`texlive/texlive:latest`) | Isolated LaTeX→PDF compiler (NOT yet pulled) | `docker pull texlive/texlive:latest` in WSL + `PDF_COMPILE_CMD` mapping Windows temp dir via `wslpath` |
-| Redis (absent) | BullMQ transport + future rate limiting | Set `REDIS_URL` when available |
+| Redis (absent) | BullMQ transport + future rate limiting | Set `REDIS_URL` + `BULLMQ_ENABLED=1` when available |
 | Qwen via OpenAI-compatible gateway (college-hosted) | LLM content generation | `LLM_BASE_URL` + `LLM_API_KEY` + `LLM_MODEL`; without all three the service runs a marked stub |
 | Tavily **or** SearXNG (both absent) | Web research | `TAVILY_API_KEY` or `SEARXNG_URL`; without either, research is skipped |
 | Monaco CDN | Editor runtime assets | None (runtime network required) |

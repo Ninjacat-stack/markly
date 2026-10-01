@@ -80,7 +80,7 @@ Open `:5173` and use the nav: **Create** (sync or background-job generation),
 
 - `POST /api/v1/jobs` (type `generate`) → `202` + pollable
   `pending → researching → generating → validating → completed/failed`.
-  BullMQ + Redis transport activates with `REDIS_URL`; otherwise in-process.
+  BullMQ + Redis transport activates with `REDIS_URL` + `BULLMQ_ENABLED=1`; otherwise in-process.
 - Auth: `POST /api/v1/auth/register|login` (bcrypt + JWT), `GET /api/v1/auth/me`.
 - Helmet headers, request logging, in-memory rate limiting, 25MB upload caps with
   PDF/PNG type checks, LaTeX length caps, unhandled-rejection logging.
