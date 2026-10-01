@@ -95,6 +95,26 @@ describe("PDF compiler", () => {
     }
   });
 
+  it("runs the compiler twice so tikz overlays settle", async () => {
+    const os = await import("node:os");
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const marker = path.join(os.tmpdir(), "assignmentai-passes-probe.txt").replaceAll("\\", "/");
+    try { fs.unlinkSync(marker); } catch { /* first run */ }
+    const prev = process.env.PDF_COMPILE_CMD;
+    // Stub compiler: records each invocation, then fakes a PDF.
+    process.env.PDF_COMPILE_CMD = `node -e "const fs=require('fs');fs.appendFileSync('${marker}','x');fs.writeFileSync('doc.pdf','PDF')"`;
+    try {
+      const out = await compileLatexToPdf("\\documentclass{article}\\begin{document}hi\\end{document}", null);
+      assert.equal(out.ok, true);
+      assert.equal(fs.readFileSync(marker, "utf8").length, 2, "compiler must run twice");
+    } finally {
+      if (prev === undefined) delete process.env.PDF_COMPILE_CMD;
+      else process.env.PDF_COMPILE_CMD = prev;
+      try { fs.unlinkSync(marker); } catch { /* cleanup */ }
+    }
+  });
+
   it("fails gracefully when no compiler is available", async () => {
     const prev = process.env.PDF_COMPILE_CMD;
     process.env.PDF_COMPILE_CMD = "definitely-not-a-real-command-xyz {dir}";

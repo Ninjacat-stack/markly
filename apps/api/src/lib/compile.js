@@ -72,6 +72,10 @@ export async function compileLatexToPdf(tex, template, workDir) {
 
     const cmd = fillCmd(dir);
     try {
+      // Two passes: tikz `remember picture` overlays (border, watermark,
+      // header positions) are written to .aux on pass 1 and only land
+      // correctly on pass 2. A single pass leaves them misplaced.
+      await execFileAsync(cmd, { shell: true, timeout: 120000, cwd: dir, maxBuffer: 4 * 1024 * 1024 });
       await execFileAsync(cmd, { shell: true, timeout: 120000, cwd: dir, maxBuffer: 4 * 1024 * 1024 });
     } catch (err) {
       const log = tailFile(join(dir, "doc.log"), 60);
