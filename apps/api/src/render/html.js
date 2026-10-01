@@ -1,0 +1,129 @@
+// HTML document renderer (Phase 2).
+// Assignment JSON in -> complete printable HTML document out.
+// The DOCX (Phase 4) and LaTeX (Phase 4) renderers must mirror these same
+// sections in the same order; only presentation differs per template.
+
+// PRODUCT RULE: watermark opacity is ALWAYS 50%. This constant wins over any
+// template value so the rule holds for every tenant, every page, every format.
+export const WATERMARK_OPACITY = 0.5;
+
+export function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function sectionList(items) {
+  return `<ul>${items.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul>`;
+}
+
+function stepsList(steps) {
+  return `<ol class="steps">${steps
+    .map(
+      (s) => `<li class="step">
+        <div class="step-title">Step ${s.number}: ${escapeHtml(s.title)}</div>
+        ${sectionList(s.description)}
+        ${s.code ? `<pre class="code"${s.language ? ` data-language="${escapeHtml(s.language)}"` : ""}>${escapeHtml(s.code)}</pre>` : ""}
+      </li>`,
+    )
+    .join("")}</ol>`;
+}
+
+export function renderHtml(content, template) {
+  const t = template?.template ?? {};
+  const page = t.page ?? {};
+  const margin = page.margin ?? {};
+  const typo = t.typography ?? {};
+  const header = t.header ?? {};
+  const watermark = t.watermark ?? {};
+  const footer = t.footer ?? {};
+
+  // Asset refs are URL paths served by the API (/assets/*). When the artwork
+  // file is missing, render a labeled placeholder box in the same position.
+  const headerImg = header.image
+    ? `<img class="doc-header-img" src="${escapeHtml(header.image)}" alt="${escapeHtml(header.alt ?? "Header")}" onerror="this.outerHTML='<div class=&quot;doc-header-missing&quot;'>[header artwork missing: ${escapeHtml(header.image)}]</div>'" />`
+    : "";
+  const watermarkImg = watermark.image
+    ? `<img class="watermark-img" src="${escapeHtml(watermark.image)}" alt="${escapeHtml(watermark.alt ?? "Watermark")}" onerror="this.remove()" />`
+    : `<div class="watermark-missing">[watermark artwork missing]</div>`;
+
+  const expNo = content.experimentNumber ? `Experiment No. ${escapeHtml(content.experimentNumber)}` : "";
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>${escapeHtml(content.title)}</title>
+<style>
+  @page { size: ${escapeHtml(page.size ?? "A4")}; margin: 0; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: ${typo.fontFamily ?? "Georgia, 'Times New Roman', serif"};
+    font-size: ${typo.baseSize ?? "12pt"};
+    line-height: ${typo.lineHeight ?? 1.6};
+    color: #111;
+    margin: 0;
+    padding: 0;
+  }
+  /* Fixed elements repeat on EVERY printed page (Chrome/Edge print + PDF). */
+  .doc-header {
+    position: fixed; top: 0; left: 0; right: 0;
+    padding: 10px 18mm 8px 18mm;
+    border-bottom: 2px solid #1a3a7c;
+    background: #fff;
+  }
+  .doc-header-img { display: block; width: 100%; height: ${escapeHtml(header.height ?? "72px")}; object-fit: contain; }
+  .doc-header-missing { border: 1px dashed #999; color: #777; text-align: center; padding: 14px; font-size: 10pt; }
+  .watermark {
+    position: fixed; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    opacity: ${WATERMARK_OPACITY};
+    pointer-events: none;
+    z-index: 0;
+    text-align: center;
+  }
+  .watermark-img { width: 320px; max-width: 60%; }
+  .watermark-missing { border: 1px dashed #999; color: #777; padding: 40px 60px; font-size: 10pt; }
+  .doc-footer {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    padding: 6px 18mm;
+    font-size: 9pt; color: #444; text-align: center;
+    border-top: 1px solid #ccc; background: #fff;
+  }
+  .doc-footer .pagenum::after { counter-increment: page; content: counter(page); }
+  main {
+    position: relative; z-index: 1;
+    padding: ${escapeHtml(margin.top ?? "110px")} ${escapeHtml(margin.right ?? "18mm")} ${escapeHtml(margin.bottom ?? "20mm")} ${escapeHtml(margin.left ?? "18mm")};
+  }
+  h1 { font-size: 17pt; text-align: center; margin: 0 0 4px 0; }
+  .exp-no { text-align: center; font-weight: bold; margin-bottom: 12px; }
+  h2 { font-size: 13pt; border-bottom: 1px solid #333; padding-bottom: 2px; margin-top: 22px; }
+  .aim-box { border: 1px solid #333; padding: 8px 12px; }
+  pre.code { background: #f4f4f4; border: 1px solid #ccc; padding: 8px; overflow-x: auto; font-size: 10pt; }
+  @media screen { body { background: #e8e8e8; } main, .doc-header, .doc-footer { max-width: 210mm; margin-left: auto; margin-right: auto; } }
+</style>
+</head>
+<body>
+  <div class="doc-header">${headerImg}</div>
+  <div class="watermark">${watermarkImg}</div>
+  <div class="doc-footer">${escapeHtml(footer.text ?? "")}${footer.showPageNumber ? ' &nbsp;|&nbsp; Page <span class="pagenum"></span>' : ""}</div>
+  <main>
+    <h1>${escapeHtml(content.title)}</h1>
+    ${expNo ? `<div class="exp-no">${expNo}</div>` : ""}
+    <h2>Aim</h2>
+    <div class="aim-box">${escapeHtml(content.aim)}</div>
+    <h2>Objectives</h2>
+    ${sectionList(content.objectives)}
+    <h2>Theory</h2>
+    ${content.theory.map((p) => `<p>${escapeHtml(p)}</p>`).join("\n    ")}
+    <h2>Procedure / Steps</h2>
+    ${stepsList(content.steps)}
+    <h2>Conclusion</h2>
+    <p>${escapeHtml(content.conclusion)}</p>
+  </main>
+</body>
+</html>`;
+}
