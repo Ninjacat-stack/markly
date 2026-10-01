@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "note": "Subject generation profiles are config, not prompt strings. requiresResearch is informational in Phase 1 (no web search yet).",
+  "subjects": {
+    "DBMS": {
+      "requiresCode": true,
+      "languages": ["sql"],
+      "requiresResearch": true,
+      "validation": { "sql": true }
+    },
+    "DSA": {
+      "requiresCode": true,
+      "languages": ["java"],
+      "requiresResearch": false,
+      "validation": { "compile": false }
+    },
+    "UHV": {
+      "requiresCode": false,
+      "languages": [],
+      "requiresResearch": true,
+      "validation": {}
+    },
+    "DLDCA": {
+      "requiresCode": false,
+      "languages": [],
+      "requiresResearch": false,
+      "validation": { "truthTable": false }
+    },
+    "Professional Skills / AWS": {
+      "requiresCode": false,
+      "languages": [],
+      "requiresResearch": true,
+      "validation": { "docConsistency": false }
+    }
+  }
+}
