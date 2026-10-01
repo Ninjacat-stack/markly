@@ -3,6 +3,11 @@
 apps/api/.env
 services/ai-service/.env
 
+# Runtime data (never commit: generated files, uploads, ingested corpus)
+apps/api/assets/generated/
+apps/api/assets/uploads/
+services/ai-service/corpus/
+
 # Python
 __pycache__/
 *.py[cod]

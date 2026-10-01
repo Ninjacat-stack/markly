@@ -1,4 +1,4 @@
-"""FastAPI entrypoint for the AI service (Phase 1: generation only, no search/RAG)."""
+"""FastAPI entrypoint for the AI service: generation, regen, research, corpus, code checks."""
 from __future__ import annotations
 
 import os
