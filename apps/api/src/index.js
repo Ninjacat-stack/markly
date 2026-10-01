@@ -4,12 +4,18 @@ import express from "express";
 import mongoose from "mongoose";
 import { assignmentsRouter } from "./routes/assignments.js";
 import { healthRouter } from "./routes/health.js";
+import { templatesRouter } from "./routes/templates.js";
+import { assetsDir, ensureDirs } from "./lib/storage.js";
 
 dotenv.config();
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
+
+// Tenant artwork (headers, watermarks, logos) served as static files.
+ensureDirs();
+app.use("/assets", express.static(assetsDir));
 
 // Basic rate limiting (Phase 1: simple in-memory window; BullMQ/Redis arrive in Phase 9).
 const hits = new Map();
@@ -29,6 +35,7 @@ app.use("/api/", (req, res, next) => {
 
 app.use("/api/v1/health", healthRouter);
 app.use("/api/v1/assignments", assignmentsRouter);
+app.use("/api/v1/templates", templatesRouter);
 
 app.get("/", (_req, res) => {
   res.json({ service: "assignmentai-api", docs: "/api/v1/health" });

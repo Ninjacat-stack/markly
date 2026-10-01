@@ -1,0 +1,48 @@
+{
+  "$comment": "TENANT DATA, not application logic. Add more tenants/departments here (Phase 8 adds CRUD + versioning UI).",
+  "tenant": {
+    "id": "tcet",
+    "name": "Thakur College of Engineering & Technology",
+    "slug": "tcet"
+  },
+  "department": {
+    "id": "tcet-computer-engineering",
+    "tenantId": "tcet",
+    "name": "Department of Computer Engineering"
+  },
+  "template": {
+    "id": "tcet-computer-engineering",
+    "tenantId": "tcet",
+    "departmentId": "tcet-computer-engineering",
+    "name": "TCET Computer Engineering Practical",
+    "version": 1,
+    "status": "active",
+    "page": {
+      "size": "A4",
+      "margin": { "top": "110px", "right": "18mm", "bottom": "20mm", "left": "18mm" }
+    },
+    "typography": {
+      "fontFamily": "Georgia, 'Times New Roman', serif",
+      "baseSize": "12pt",
+      "lineHeight": 1.6
+    },
+    "requiredSections": ["title", "aim", "objectives", "theory", "steps", "conclusion"],
+    "studentMetadataFields": [],
+    "header": {
+      "image": "/assets/tcet-header.png",
+      "alt": "TCET Department of Computer Engineering",
+      "height": "72px",
+      "everyPage": true
+    },
+    "watermark": {
+      "image": "/assets/tcet-watermark.png",
+      "alt": "TCET",
+      "$commentOpacity": "PRODUCT RULE: watermark opacity is ALWAYS 50%. The renderer enforces this and ignores any value here.",
+      "everyPage": true
+    },
+    "footer": {
+      "text": "Thakur College of Engineering & Technology — Department of Computer Engineering",
+      "showPageNumber": true
+    }
+  }
+}

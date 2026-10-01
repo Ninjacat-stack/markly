@@ -2,6 +2,8 @@ import { Router } from "express";
 import { assignmentContentSchema, generateInputSchema } from "../schemas.js";
 import { generateViaAiService } from "../lib/aiClient.js";
 import { getSubjectProfile } from "../lib/subjects.js";
+import { getDefaultTemplate, getTemplate } from "../lib/templates.js";
+import { renderHtml } from "../render/html.js";
 
 export const assignmentsRouter = Router();
 
@@ -12,7 +14,7 @@ let counter = 0;
 /**
  * POST /api/v1/assignments/generate
  * Body: { aim*, description?, subject?, experimentNumber?, technology?, difficulty?, ... }
- * Flow: validate -> subject profile lookup -> template lookup (stub) -> AI service -> validate -> return.
+ * Flow: validate -> subject profile lookup -> tenant template lookup -> AI service -> validate -> return.
  */
 assignmentsRouter.post("/generate", async (req, res) => {
   const parsed = generateInputSchema.safeParse(req.body);
@@ -21,8 +23,11 @@ assignmentsRouter.post("/generate", async (req, res) => {
   }
   const input = parsed.data;
   const profile = getSubjectProfile(input.subject);
-  // Phase 1: template lookup is a stub (default template); full Template model lands in Phase 8.
-  const template = { id: "default-v1", version: 1, note: "Phase 1 default template" };
+  // Template lookup from tenant seeds (requested templateId or the active default).
+  const seed = (input.templateId && getTemplate(input.templateId)) || getDefaultTemplate();
+  const template = seed
+    ? { id: seed.template.id, version: seed.template.version, name: seed.template.name }
+    : { id: "default-v1", version: 1, note: "No tenant template seeds found" };
 
   const aiBase = process.env.AI_SERVICE_URL ?? "http://127.0.0.1:8001";
   try {
@@ -78,4 +83,12 @@ assignmentsRouter.get("/:id", (req, res) => {
   const record = store.get(req.params.id);
   if (!record) return res.status(404).json({ error: "Not found" });
   return res.json(record);
+});
+
+// Phase 2: printable HTML document (header + 50% watermark on every page).
+assignmentsRouter.get("/:id/html", (req, res) => {
+  const record = store.get(req.params.id);
+  if (!record) return res.status(404).json({ error: "Not found" });
+  const seed = getTemplate(record.template?.id) || getDefaultTemplate();
+  res.type("html").send(renderHtml(record.content, seed));
 });
