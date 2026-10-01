@@ -1,11 +1,13 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+# Env / secrets
+.env
+apps/api/.env
+services/ai-service/.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+services/ai-service/*.log
 
 node_modules
 dist
