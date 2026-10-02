@@ -4,6 +4,7 @@ apps/api/.env
 services/ai-service/.env
 
 # Runtime data (never commit: generated files, uploads, ingested corpus)
+/data/
 apps/api/assets/generated/
 apps/api/assets/uploads/
 apps/api/data/

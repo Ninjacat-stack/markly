@@ -6,6 +6,7 @@ import {
   listTemplates,
   updateTemplate,
 } from "../lib/templateStore.js";
+import { sendError } from "../lib/errors.js";
 
 export const templatesRouter = Router();
 
@@ -59,7 +60,10 @@ templatesRouter.post("/", (req, res) => {
     tryPersist(t);
     return res.status(201).json({ template: t });
   } catch (err) {
-    return res.status(409).json({ error: String(err.message ?? err) });
+    const msg = String(err?.message ?? err);
+    // Known product copy passes through; anything unexpected stays server-side.
+    if (msg.includes("already exists")) return res.status(409).json({ error: msg });
+    return sendError(res, 500, "Couldn't create the template. Please try again.", msg);
   }
 });
 
@@ -81,7 +85,10 @@ templatesRouter.post("/from-pdf", upload.single("file"), async (req, res) => {
     form.append("file", new Blob([req.file.buffer], { type: "application/pdf" }), req.file.originalname);
     const r = await fetch(`${aiBase()}/v1/analyze-template`, { method: "POST", body: form });
     const draft = await r.json().catch(() => ({}));
-    if (!r.ok) return res.status(r.status).json(draft);
+    if (!r.ok) {
+      console.error("[api] analyze-template failed:", r.status, JSON.stringify(draft).slice(0, 500));
+      return res.status(r.status).json({ error: "Template extraction failed" });
+    }
     const t = createTemplate({
       name: `${String(req.body?.name ?? draft.suggestedName ?? "Imported template").slice(0, 120)}`,
       tenantId: req.body?.tenantId,
@@ -92,7 +99,7 @@ templatesRouter.post("/from-pdf", upload.single("file"), async (req, res) => {
     tryPersist(t);
     return res.status(201).json({ template: t, analysis: draft });
   } catch (err) {
-    return res.status(502).json({ error: "Template extraction failed", details: String(err).slice(0, 500) });
+    return sendError(res, 502, "Template extraction failed", String(err).slice(0, 500));
   }
 });
 

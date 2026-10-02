@@ -64,6 +64,21 @@ app.get("/", (_req, res) => {
   res.json({ service: "Markly-api", docs: "/api/v1/health" });
 });
 
+// Last stop: never leak stacks or internals (Express's default handler renders
+// HTML stack pages when NODE_ENV !== "production", and body-parser errors land
+// here too). Real details go to the server log only.
+const SAFE_CLIENT_MESSAGES = new Set(["Only .pdf uploads are accepted"]);
+app.use((err, _req, res, _next) => {
+  if (SAFE_CLIENT_MESSAGES.has(err?.message)) {
+    return res.status(400).json({ error: err.message });
+  }
+  const status = err?.status ?? err?.statusCode ?? 500;
+  const code = status >= 400 && status < 600 ? status : 500;
+  console.error(`[api] unhandled request error (${code}):`, err);
+  if (res.headersSent) return;
+  res.status(code).json({ error: "Something went wrong. Please try again." });
+});
+
 const PORT = Number(process.env.PORT ?? 4000);
 
 async function main() {

@@ -1,7 +1,23 @@
 import { Router } from "express";
 import { clearSessionCookie, loginUser, registerUser, setSessionCookie } from "../lib/auth.js";
+import { sendError } from "../lib/errors.js";
 
 export const authRouter = Router();
+
+// Only these product-copy messages may reach the client; anything else
+// (driver text, bcrypt failures) stays in the server log.
+const SAFE_AUTH_MESSAGES = new Set([
+  "Valid email is required",
+  "Password must be at least 8 chars",
+  "Email already registered",
+  "Invalid email or password",
+]);
+
+function authError(res, status, err, fallback) {
+  const msg = String(err?.message ?? err);
+  if (SAFE_AUTH_MESSAGES.has(msg)) return res.status(status).json({ error: msg });
+  return sendError(res, status, fallback, msg);
+}
 
 authRouter.post("/register", async (req, res) => {
   try {
@@ -11,8 +27,9 @@ authRouter.post("/register", async (req, res) => {
     setSessionCookie(res, token);
     return res.status(201).json({ token });
   } catch (err) {
-    const status = String(err.message ?? "").includes("already registered") ? 409 : 400;
-    return res.status(status).json({ error: String(err.message ?? err) });
+    const msg = String(err?.message ?? "");
+    const status = msg.includes("already registered") ? 409 : 400;
+    return authError(res, status, err, "Couldn't create the account. Please try again.");
   }
 });
 
@@ -22,7 +39,7 @@ authRouter.post("/login", async (req, res) => {
     setSessionCookie(res, token);
     return res.json({ token });
   } catch (err) {
-    return res.status(401).json({ error: String(err.message ?? err) });
+    return authError(res, 401, err, "Couldn't log you in. Please try again.");
   }
 });
 

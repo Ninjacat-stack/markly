@@ -14,8 +14,15 @@ function authHeaders(extra = {}) {
 
 // credentials:'include' lets the httpOnly session cookie ride along
 // (required cross-site in production, harmless same-origin in dev).
-function apiFetch(url, options = {}) {
-  return fetch(url, { credentials: 'include', ...options })
+// Transport failures surface here as friendly product copy: callers show
+// err.message verbatim, so "Failed to fetch" must never escape this wrapper.
+async function apiFetch(url, options = {}) {
+  try {
+    return await fetch(url, { credentials: 'include', ...options })
+  } catch (err) {
+    if (err?.name === 'AbortError') throw new Error('The request timed out. Please try again.')
+    throw new Error("Couldn't reach the Markly service. Check your connection and try again.")
+  }
 }
 
 // Server record -> board card (keyed by record id so reloads stay consistent).
@@ -433,7 +440,7 @@ export default function App() {
   }, [handleAuthRequired, session])
 
   useEffect(() => {
-    apiapiFetch(`${API_BASE}/api/v1/health`)
+    apiFetch(`${API_BASE}/api/v1/health`)
       .then((r) => setServiceUp(r.ok))
       .catch(() => setServiceUp(false))
     apiFetch(`${API_BASE}/api/v1/templates`, { headers: authHeaders() })
@@ -483,7 +490,7 @@ export default function App() {
         })
         status = res.status
         const data = await res.json().catch(() => ({}))
-        if (!res.ok) throw new Error(data?.error ? String(data.error) : `Request failed (${res.status})`)
+        if (!res.ok) throw new Error(data?.error ? String(data.error) : `Request failed. Please try again.`)
         if (!data?.content) throw new Error('Service returned an empty assignment')
         // Rekey the card onto the server record id so reloads stay consistent.
         setIssues((prev) => prev.map((it) => (it.key === key ? { ...recordToIssue(data), key: data.id } : it)))
@@ -588,7 +595,7 @@ export default function App() {
           })
           if (!res.ok && res.status !== 404) {
             const data = await res.json().catch(() => ({}))
-            throw new Error(data?.error ?? `Delete failed (${res.status})`)
+            throw new Error(data?.error ?? 'Delete failed. Please try again.')
           }
         } catch (err) {
           pushToast('error', `${key} not deleted`, err instanceof Error ? err.message : String(err))
@@ -616,7 +623,7 @@ export default function App() {
     async (recordId) => {
       try {
         const record = await apiFetch(`${API_BASE}/api/v1/assignments/${recordId}`, { headers: authHeaders() }).then((r) => {
-          if (!r.ok) throw new Error(`Load failed (${r.status})`)
+          if (!r.ok) throw new Error("Couldn't load this assignment. Please try again.")
           return r.json()
         })
         // One card per server record: skip when already on the board.
@@ -647,7 +654,7 @@ export default function App() {
         pushToast('error', 'Document cleared', 'The service no longer has this record — regenerate the assignment to restore exports.')
         return
       }
-      if (!res.ok) throw new Error(`Export failed (${res.status})`)
+      if (!res.ok) throw new Error(`Export failed. Please try again.`)
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -737,7 +744,7 @@ export default function App() {
 
       {serviceUp === false && (
         <div className="no-print border-b border-amber-200 bg-amber-50 px-4 py-2 text-[13px] text-amber-800">
-          The generation service is not responding. Start the API on <span className="font-mono">{API_BASE}</span> to create assignments.
+          Can't reach the Markly service. Check your connection and try again.
         </div>
       )}
 
@@ -931,7 +938,7 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
       onMarkStale(issue.key)
       return 'This record was cleared on the service — regenerate the assignment to restore this feature.'
     }
-    return data?.error ?? `Request failed (${res.status})`
+    return data?.error ?? `Request failed. Please try again.`
   }
 
   // 401 (missing/expired token) must invite login, not just stain the drawer with an error.
@@ -962,7 +969,7 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
       const ctype = res.headers.get('content-type') ?? ''
       if (!res.ok || ctype.includes('application/json')) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data?.error ?? `Export failed (${res.status})`)
+        throw new Error(data?.error ?? `Export failed. Please try again.`)
       }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
@@ -1074,7 +1081,7 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
       })
       throwIfAuth(res)
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data?.error ?? `Options save failed (${res.status})`)
+      if (!res.ok) throw new Error(data?.error ?? "Couldn't save options. Please try again.")
       onRecordUpdate(issue.key, data)
       setPreviewKey((k) => k + 1)
     } catch (err) {
@@ -1511,7 +1518,7 @@ function LoginModal({ onClose, onLogin }) {
         signal: AbortSignal.timeout(30000),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data?.error ?? `Auth failed (${res.status})`)
+      if (!res.ok) throw new Error(data?.error ?? "Couldn't log you in. Please try again.")
       onLogin({ token: data.token, email })
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -1545,7 +1552,6 @@ function LoginModal({ onClose, onLogin }) {
           {mode === 'login' ? 'Need an account? Register' : 'Have an account? Log in'}
         </button>
       </form>
-      <p className="mt-3 text-[12px] text-[#8590A2]">Tokens attach to every request once logged in. The API enforces login only when AUTH_REQUIRED=1.</p>
     </ModalShell>
   )
 }
@@ -1571,7 +1577,7 @@ function TemplatesModal({ templates, onRefresh, notify, onClose }) {
         signal: AbortSignal.timeout(30000),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data?.error ?? `Create failed (${res.status})`)
+      if (!res.ok) throw new Error(data?.error ?? "Couldn't create the template. Please try again.")
       setName('')
       onRefresh()
       notify('success', 'Template created', `${data.template.name} v${data.template.version} (draft).`)
@@ -1598,7 +1604,7 @@ function TemplatesModal({ templates, onRefresh, notify, onClose }) {
         signal: AbortSignal.timeout(120000),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data?.error ?? `Import failed (${res.status})`)
+      if (!res.ok) throw new Error(data?.error ?? 'Import failed. Please try again.')
       setFile(null)
       onRefresh()
       notify('success', 'Template draft saved', `${data.template.name} — detected: ${(data.analysis?.detectedHeadings ?? []).join(', ') || 'no headings'}.`)

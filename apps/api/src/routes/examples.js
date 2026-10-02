@@ -1,5 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
+import { sendError } from "../lib/errors.js";
 
 export const examplesRouter = Router();
 
@@ -28,10 +29,13 @@ examplesRouter.post("/ingest", upload.single("file"), async (req, res) => {
     form.append("subject", String(req.body?.subject ?? ""));
     const r = await fetch(`${aiBase()}/v1/ingest`, { method: "POST", body: form });
     const data = await r.json().catch(() => ({}));
-    if (!r.ok) return res.status(r.status).json(data);
+    if (!r.ok) {
+      console.error("[api] ingest failed:", r.status, JSON.stringify(data).slice(0, 500));
+      return res.status(r.status).json({ error: "Ingestion failed" });
+    }
     return res.json(data);
   } catch (err) {
-    return res.status(502).json({ error: "Ingestion failed", details: String(err).slice(0, 500) });
+    return sendError(res, 502, "Ingestion failed", String(err).slice(0, 500));
   }
 });
 
@@ -44,8 +48,13 @@ examplesRouter.get("/", async (req, res) => {
       k: String(req.query.k ?? 2),
     });
     const r = await fetch(`${aiBase()}/v1/examples?${params}`);
-    return res.status(r.status).json(await r.json());
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      console.error("[api] examples fetch failed:", r.status, JSON.stringify(data).slice(0, 500));
+      return res.status(r.status).json({ error: "Example retrieval failed" });
+    }
+    return res.json(data);
   } catch (err) {
-    return res.status(502).json({ error: "Example retrieval failed", details: String(err).slice(0, 500) });
+    return sendError(res, 502, "Example retrieval failed", String(err).slice(0, 500));
   }
 });

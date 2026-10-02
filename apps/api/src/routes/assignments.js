@@ -5,6 +5,7 @@ import { getSubjectProfile } from "../lib/subjects.js";
 import { getDefaultTemplateDoc, getTemplateDoc } from "../lib/templateStore.js";
 import { findRecord, listRecordsFor, nextAssignmentId, ownerId, persistRecord, saveRecord } from "../lib/assignmentStore.js";
 import { renderHtml } from "../render/html.js";
+import { sendError } from "../lib/errors.js";
 
 export const assignmentsRouter = Router();
 
@@ -18,7 +19,7 @@ export const assignmentsRouter = Router();
 assignmentsRouter.post("/generate", async (req, res) => {
   const parsed = generateInputSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+    return sendError(res, 400, "Invalid input", parsed.error.flatten());
   }
   const input = parsed.data;
   const profile = getSubjectProfile(input.subject);
@@ -36,9 +37,7 @@ assignmentsRouter.post("/generate", async (req, res) => {
     const result = await generateViaAiService(aiInput, aiBase);
     const content = assignmentContentSchema.safeParse(result.content);
     if (!content.success) {
-      return res
-        .status(502)
-        .json({ error: "AI service returned invalid Assignment JSON", details: content.error.flatten() });
+      return sendError(res, 502, "AI service returned invalid Assignment JSON", content.error.flatten());
     }
     const id = nextAssignmentId();
     const record = {
@@ -67,7 +66,7 @@ assignmentsRouter.post("/generate", async (req, res) => {
     return res.json(record);
   } catch (err) {
     console.error(`[api] generation failed for aim "${input.aim.slice(0, 80)}":`, String(err));
-    return res.status(502).json({ error: "Generation failed", details: String(err) });
+    return sendError(res, 502, "Generation failed");
   }
 });
 
@@ -100,7 +99,7 @@ assignmentsRouter.delete("/:id", async (req, res) => {
     await deleteRecord(record.id);
     return res.json({ ok: true });
   } catch (err) {
-    return res.status(502).json({ error: "Delete failed", details: String(err).slice(0, 300) });
+    return sendError(res, 502, "Delete failed", String(err).slice(0, 300));
   }
 });
 
@@ -154,7 +153,7 @@ assignmentsRouter.post("/:id/regenerate-section", async (req, res) => {
     );
     const value = sectionValueSchemas[section].safeParse(result.value);
     if (!value.success) {
-      return res.status(502).json({ error: "Invalid regenerated section", details: value.error.flatten() });
+      return sendError(res, 502, "Invalid regenerated section", value.error.flatten());
     }
     record.content = { ...record.content, [section]: value.data };
     record.updatedAt = new Date().toISOString();
@@ -163,7 +162,7 @@ assignmentsRouter.post("/:id/regenerate-section", async (req, res) => {
     return res.json(record);
   } catch (err) {
     console.error(`[api] section regeneration failed for ${record.id}:`, String(err));
-    return res.status(502).json({ error: "Regeneration failed", details: String(err) });
+    return sendError(res, 502, "Regeneration failed");
   }
 });
 
@@ -173,7 +172,7 @@ assignmentsRouter.put("/:id", async (req, res) => {
   if (!record) return res.status(404).json({ error: "Not found" });
   const parsed = assignmentContentSchema.safeParse(req.body?.content);
   if (!parsed.success) {
-    return res.status(400).json({ error: "Invalid assignment content", details: parsed.error.flatten() });
+    return sendError(res, 400, "Invalid assignment content", parsed.error.flatten());
   }
   record.content = parsed.data;
   record.editedByUser = true;
@@ -194,7 +193,7 @@ assignmentsRouter.get("/:id/docx", async (req, res) => {
     res.setHeader("content-disposition", `attachment; filename="assignment-${record.id}.docx"`);
     return res.send(Buffer.from(buf));
   } catch (err) {
-    return res.status(502).json({ error: "DOCX rendering failed", details: String(err).slice(0, 500) });
+    return sendError(res, 502, "DOCX rendering failed", String(err).slice(0, 500));
   }
 });
 
@@ -232,11 +231,17 @@ assignmentsRouter.post("/:id/pdf", async (req, res) => {
       import("../lib/compile.js"),
     ]);
     const preflight = await checkCompiler();
-    if (!preflight.ok) return res.status(502).json({ error: preflight.error });
+    if (!preflight.ok) {
+      console.error(`[api] pdf preflight failed for ${record.id}:`, preflight.error);
+      return res.status(502).json({ error: "The PDF service is unavailable right now. Please try again later." });
+    }
     const seed = getTemplateDoc(record.template?.id) || getDefaultTemplateDoc();
     const tex = record.latexOverride ?? renderLatex(record.content, seed, record.options);
     const out = await compileLatexToPdf(tex, seed);
-    if (!out.ok) return res.status(502).json({ error: out.error, log: out.log });
+    if (!out.ok) {
+      console.error(`[api] pdf compile failed for ${record.id}:`, out.error, out.log);
+      return res.status(502).json({ error: "The PDF couldn't be built. Please try again." });
+    }
     try {
       const { join } = await import("node:path");
       const { assetsDir } = await import("../lib/storage.js");
@@ -249,7 +254,7 @@ assignmentsRouter.post("/:id/pdf", async (req, res) => {
     res.setHeader("content-disposition", `attachment; filename="assignment-${record.id}.pdf"`);
     return res.send(Buffer.from(out.pdf));
   } catch (err) {
-    return res.status(502).json({ error: "PDF pipeline failed", details: String(err).slice(0, 500) });
+    return sendError(res, 502, "PDF pipeline failed", String(err).slice(0, 500));
   }
 });
 

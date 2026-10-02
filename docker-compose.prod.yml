@@ -16,6 +16,7 @@ services:
       - ./apps/api/.env
     environment:
       AI_SERVICE_URL: http://ai-service:8001
+      NODE_ENV: production
       TMPDIR: /opt/markly/data/tex
     volumes:
       - ./data:/app/data
