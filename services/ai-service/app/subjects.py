@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -12,16 +13,18 @@ DEFAULT_PROFILE = {
     "validation": {},
 }
 
+# __file__ = <root>/services/ai-service/app/subjects.py, so parents[3] is the repo root.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 CANDIDATE_PATHS = [
-    Path(__file__).resolve().parents[2] / "packages" / "shared" / "subject-profiles.json",
-    Path(__file__).resolve().parents[1] / "subject-profiles.json",
+    Path(os.getenv("SUBJECT_PROFILES_PATH", "")) if os.getenv("SUBJECT_PROFILES_PATH") else None,
+    _REPO_ROOT / "packages" / "shared" / "subject-profiles.json",
 ]
 
 
 @lru_cache(maxsize=1)
 def load_profiles() -> dict:
     for p in CANDIDATE_PATHS:
-        if p.exists():
+        if p and p.exists():
             return json.loads(p.read_text(encoding="utf-8"))
     return {"subjects": {}}
 

@@ -14,10 +14,13 @@ let cache = null;
 function loadAll() {
   if (cache) return cache;
   const here = dirname(fileURLToPath(import.meta.url));
+  // src/lib -> root is 4 levels up; plus cwd-based fallbacks however the server is launched.
   const candidates = [
-    join(here, "..", "..", "..", "packages", "shared", "subject-profiles.json"),
+    process.env.SUBJECT_PROFILES_PATH,
+    join(here, "..", "..", "..", "..", "packages", "shared", "subject-profiles.json"),
+    join(process.cwd(), "..", "..", "packages", "shared", "subject-profiles.json"),
     join(process.cwd(), "packages", "shared", "subject-profiles.json"),
-  ];
+  ].filter(Boolean);
   for (const p of candidates) {
     try {
       if (existsSync(p)) {

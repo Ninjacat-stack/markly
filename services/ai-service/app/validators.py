@@ -9,9 +9,16 @@ BANNED_PHRASES = ("viva", "viva-voce", "viva voce")
 
 
 def validate_assignment(data: dict[str, Any], subject_profile: dict | None = None) -> dict[str, Any]:
-    """Parse with Pydantic then run semantic checks. Raises ValueError on failure."""
+    """Parse with Pydantic then run semantic checks.
+
+    Hard failures (viva content, bad numbering, empty sections) raise ValueError.
+    Soft findings (e.g. a code subject with no code blocks — the model may
+    legitimately omit code when facts are unavailable) are returned as warnings
+    so generation succeeds and the UI can surface them.
+    """
     content = AssignmentContent.model_validate(data)
-    issues: list[str] = []
+    errors: list[str] = []
+    warnings: list[str] = []
 
     blob = " ".join(
         [
@@ -23,33 +30,32 @@ def validate_assignment(data: dict[str, Any], subject_profile: dict | None = Non
         ]
     ).lower()
     if any(p in blob for p in BANNED_PHRASES):
-        issues.append("viva questions are out of scope and must not be generated")
+        errors.append("viva questions are out of scope and must not be generated")
 
     numbers = [s.number for s in content.steps]
     if numbers != list(range(1, len(numbers) + 1)):
-        issues.append(f"steps must be numbered 1..n sequentially, got {numbers}")
+        errors.append(f"steps must be numbered 1..n sequentially, got {numbers}")
 
     for s in content.steps:
         if not s.description or any(len(d.strip()) < 4 for d in s.description):
-            issues.append(f"step {s.number} has an empty/too-short description entry")
+            errors.append(f"step {s.number} has an empty/too-short description entry")
 
     if subject_profile and subject_profile.get("requiresCode"):
         langs = [str(x).lower() for x in subject_profile.get("languages", [])]
         has_code = any((s.code or "").strip() for s in content.steps)
-        # Phase 1: warn-level only (LLM may legitimately omit code when facts unknown).
-        # Record as info so callers can surface it without failing validation.
         if not has_code:
-            issues.append(
+            warnings.append(
                 f"subject expects code ({'/'.join(langs) or 'code'}) but no step contains code; "
                 "verify whether code was unavailable"
             )
 
-    if issues:
-        raise ValueError("; ".join(issues))
+    if errors:
+        raise ValueError("; ".join(errors))
 
     return {
         "schema": "ok",
         "requiredSections": "ok",
         "consistency": "ok",
         "code": "checked" if subject_profile and subject_profile.get("requiresCode") else "skipped",
+        "warnings": warnings,
     }

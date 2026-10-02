@@ -12,6 +12,16 @@ from app.pipeline import generate_assignment  # noqa: E402
 from app.schemas import GenerateRequest  # noqa: E402
 from app.search.extract import strip_html  # noqa: E402
 from app.search.research import run_research, select_search_provider  # noqa: E402
+from app.subjects import get_subject_profile, load_profiles  # noqa: E402
+
+
+def test_subject_profiles_load_from_real_file():
+    # Regression: the loader must resolve packages/shared/subject-profiles.json,
+    # otherwise every subject silently falls back to requiresResearch=False.
+    assert load_profiles().get("subjects", {}).get("DBMS", {}).get("requiresResearch") is True
+    assert get_subject_profile("DBMS")["requiresResearch"] is True
+    assert get_subject_profile("dbms")["requiresResearch"] is True  # case-insensitive
+    assert get_subject_profile("DSA")["requiresResearch"] is False
 
 
 def test_no_provider_when_unconfigured():
@@ -44,6 +54,8 @@ def test_pipeline_carries_sources_field():
 
 
 if __name__ == "__main__":
+    test_subject_profiles_load_from_real_file()
+    print("ok - profiles load")
     test_no_provider_when_unconfigured()
     print("ok - provider selection")
     test_research_skipped_without_subject_need()

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "Subject generation profiles are config, not prompt strings. requiresResearch is informational in Phase 1 (no web search yet).",
+  "note": "Subject generation profiles are config, not prompt strings. requiresResearch gates the Phase 5 web-research step.",
   "subjects": {
     "DBMS": {
       "requiresCode": true,
