@@ -110,7 +110,7 @@ export async function renderDocx(content, template, options = {}) {
   for (const o of content.objectives) children.push(bullet(o));
   children.push(h2("Theory"));
   for (const p of content.theory) children.push(body(p));
-  children.push(h2("Procedure / Steps"));
+  children.push(h2("Steps"));
   for (const s of content.steps) {
     children.push(new Paragraph({ text: `Step ${s.number}: ${s.title}`, heading: HeadingLevel.HEADING_3 }));
     for (const d of s.description) children.push(bullet(d));

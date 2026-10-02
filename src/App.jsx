@@ -1262,7 +1262,7 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
               </section>
 
               <section>
-                <SectionHeading icon="list">Procedure · {content.steps.length} steps</SectionHeading>
+                <SectionHeading icon="list">Steps · {content.steps.length}</SectionHeading>
                 <ol className="mt-2 flex flex-col gap-3">
                   {content.steps.map((s) => (
                     <li key={s.number} className="rounded-lg border border-[#DFE1E6]">

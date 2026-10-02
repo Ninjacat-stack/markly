@@ -109,7 +109,7 @@ ${content.objectives.map((o) => `  \\item ${escapeLatex(o)}`).join("\n")}
 \\section*{Theory}
 ${content.theory.map((p) => escapeLatex(p)).join("\n\n")}
 
-\\section*{Procedure / Steps}
+\\section*{Steps}
 ${steps}
 
 \\section*{Conclusion}

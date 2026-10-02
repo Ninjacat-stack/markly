@@ -17,7 +17,7 @@ const execFileAsync = promisify(execFile);
 // Compilation failures return { ok: false } with the compiler output attached.
 
 const DEFAULT_CMD =
-  process.env.PDF_COMPILE_CMD ??
+  process.env.PDF_COMPILE_CMD ||
   'docker run --rm -v "{dir}:/work" -w /work texlive/texlive:latest pdflatex -interaction=nonstopmode -halt-on-error doc.tex';
 
 // Compiler preflight: which docker and which image to look for. Checked BEFORE
@@ -26,7 +26,7 @@ const DEFAULT_CMD =
 function dockerBin() {
   if (process.env.PDF_DOCKER) return process.env.PDF_DOCKER;
   // Infer from the compile command: everything before " run " ("wsl docker" or "docker").
-  const cmd = process.env.PDF_COMPILE_CMD ?? DEFAULT_CMD;
+  const cmd = process.env.PDF_COMPILE_CMD || DEFAULT_CMD;
   const idx = cmd.indexOf(" run ");
   return idx === -1 ? "docker" : cmd.slice(0, idx);
 }
@@ -56,7 +56,7 @@ export function toWslPath(dir) {
 }
 
 export function fillCmd(dir) {
-  const cmd = process.env.PDF_COMPILE_CMD ?? DEFAULT_CMD;
+  const cmd = process.env.PDF_COMPILE_CMD || DEFAULT_CMD;
   return cmd.replaceAll("{wslDir}", toWslPath(dir)).replaceAll("{dir}", dir).replaceAll("{tex}", join(dir, "doc.tex"));
 }
 

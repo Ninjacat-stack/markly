@@ -54,7 +54,7 @@ describe("HTML renderer", () => {
 
   it("renders all required sections in order", () => {
     const html = renderHtml(doc, getDefaultTemplate());
-    const order = ["Aim", "Objectives", "Theory", "Procedure / Steps", "Conclusion"];
+    const order = ["Aim", "Objectives", "Theory", "Steps", "Conclusion"];
     let last = -1;
     for (const h of order) {
       const i = html.indexOf(`<h2>${h}</h2>`);

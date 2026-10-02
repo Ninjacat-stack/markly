@@ -148,7 +148,7 @@ export function renderHtml(content, template, options = {}) {
     ${sectionList(content.objectives)}
     <h2>Theory</h2>
     ${content.theory.map((p) => `<p>${escapeHtml(p)}</p>`).join("\n    ")}
-    <h2>Procedure / Steps</h2>
+    <h2>Steps</h2>
     ${stepsList(content.steps)}
     <h2>Conclusion</h2>
     ${conclusionHtml}
