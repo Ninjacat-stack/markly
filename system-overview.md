@@ -8,8 +8,8 @@
 
 ```
 BROWSER (Vercel build: marklyai.vercel.app)
-  │  fetch, Bearer JWT                localStorage: Markly_token, board cards
-  ▼
+  │  fetch, Bearer (memory token) + httpOnly cookie   state: React memory only
+  ▼                                                   (zero browser storage)
 Caddy :443 (EC2 host, Let's Encrypt) ── reverse_proxy ──▶ API :4000 (localhost only)
                                                             │  Express, apps/api/src
                               ┌─────────────────────────────┼─────────────────────────────┐
@@ -24,8 +24,9 @@ API `127.0.0.1:4000` → AI `127.0.0.1:8001` → local Mongo or memory.
 ## 2. A click's journey — Generate
 
 1. Board card form (`src/App.jsx`) collects aim/subject/experiment/template.
-2. `apiPost('/api/v1/assignments/generate')` (`src/lib/api.js`, 180s timeout)
-   with `Authorization: Bearer <Markly_token>`.
+   Logged out? Generation is not attempted — the login modal opens instead.
+2. `apiFetch('/api/v1/assignments/generate')` (180s timeout) with
+   `Authorization: Bearer <memory token>` plus the `markly_token` cookie.
 3. API validates (`apps/api/src/schemas.js`), looks up the subject profile
    (`lib/subjects.js` ← `packages/shared/subject-profiles.json`) and template
    (`lib/templateStore.js`), pulls style examples (AI corpus), optionally
@@ -57,17 +58,23 @@ API `127.0.0.1:4000` → AI `127.0.0.1:8001` → local Mongo or memory.
 
 ## 4. A click's journey — auth
 
-Register/login (`routes/auth.js`, bcrypt + JWT) → `{token}` → browser stores
-`Markly_token` (`lib/api.js`) and attaches it as `Bearer` on every call.
-With `AUTH_REQUIRED=1` all data routes reject missing/invalid tokens (401).
-Note: users live in server memory (Mongo mirror is write-only), so an API
-restart means everyone logs in again.
+Register/login (`routes/auth.js`, bcrypt + JWT) → `{token}` → token kept in
+memory, session also set as httpOnly `markly_token` cookie. Every call carries
+both (Bearer + `credentials: 'include'`). A 401 anywhere (logged out or expired
+token) opens the login modal with a "Login required" notice instead of failing,
+and templates reload right after login. On boot the board restores a still-valid
+cookie session via `GET /auth/me` — refresh keeps you logged in with zero
+browser storage (production needs `COOKIE_SECURE=1` so the cookie is
+cross-site-capable; without it every refresh logs you out). Logout clears the
+token and the cookie with matching attributes. Note: password login needs the
+in-memory users map, so it fails right after an API restart until users log in
+fresh — but existing cookie sessions survive restarts (stateless JWT, 7d).
 
 ## 5. Where state lives
 
 | State | Where | Survives restart? |
 |---|---|---|
-| Board cards, token, UI prefs | Browser `localStorage` (`Markly_*`) | Yes (per browser) |
+| Board cards, token, UI prefs | React memory only (zero browser storage) | Reload rebuilds the board from server history; session restores from cookie |
 | Assignment records, users, templates | API process memory | **No** — restart wipes |
 | Users (copy), assignments, templates | MongoDB Atlas `markly` | Yes (but list/history reads memory today) |
 | Uploaded PDFs, generated PDFs, artwork | `apps/api/assets/` (+ `data/` in prod) | Yes (disk, gitignored) |
@@ -86,7 +93,10 @@ restart means everyone logs in again.
 | DOCX layout | `apps/api/src/render/docx.js` |
 | Tenant template seed / faculty table | `apps/api/src/templates/*.json` |
 | API routes / validation | `apps/api/src/routes/*.js`, `src/schemas.js` |
-| Auth rules | `apps/api/src/routes/auth.js`, `lib/auth.js`, `AUTH_REQUIRED` |
+| Auth rules + session cookie | `apps/api/src/routes/auth.js`, `lib/auth.js`, `AUTH_REQUIRED`, `COOKIE_SECURE` |
+| Error contract (generic client messages) | `apps/api/src/lib/errors.js`, final middleware in `src/index.js` |
+| Friendly transport errors (offline/timeout) | `apiFetch` in `src/App.jsx` (single choke point) |
+| Empty-board hero + dashboard link | `EmptyState` in `src/App.jsx` |
 | Timeouts (UI stalls) | `src/lib/api.js` (180s AbortSignal) |
 
 ## 7. Environments compared
@@ -108,5 +118,13 @@ restart means everyone logs in again.
   changes need `--build`.
 - Mongo passwords with `@ : / ? #` must be percent-encoded in the URI.
 - An empty `PDF_COMPILE_CMD` now means "use default" (was: crash).
-- API restart = everyone logged out (memory users) + in-memory history gone.
+- API restart wipes memory (password login fails until fresh logins), but cookie
+  sessions survive (stateless JWT) — reload restores from `/auth/me`.
+- Prod refresh logging you out = missing `COOKIE_SECURE=1` (cookie blocked
+  cross-site); log in once after setting it.
+- Logged-out/expired actions open the login modal — a raw 401 on screen means
+  the modal path was bypassed (report it).
+- Client errors are always generic by contract (`sendError`); technical detail
+  lives in `docker logs`, never on screen — if you see a stack or status code
+  in the UI, that's a bug.
 - PDF temp dirs under `data/tex/` accumulate — clean old ones if disk fills.

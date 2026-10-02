@@ -72,6 +72,7 @@ API (`apps/api/.env`): `PORT` (4000), `AI_SERVICE_URL` (http://127.0.0.1:8001),
 `MONGODB_URI` (unset = in-memory), `RATE_LIMIT_PER_MIN` (60),
 `JWT_SECRET` (set in production), `AUTH_REQUIRED` (`1` enforces tokens, default open),
 `COOKIE_SECURE` (`1` in HTTPS cross-site production for the session cookie),
+`NODE_ENV=production` (prod compose; silences Express debug pages),
 `REDIS_URL` + `BULLMQ_ENABLED=1` (unset = in-process jobs), `PDF_COMPILE_CMD` (empty/unset =
 native-docker default since the `||`-fallback fix; on Windows-with-WSL-Docker use
 `wsl docker run --rm -v "{wslDir}:/work" -w /work texlive/texlive:latest …`).
@@ -152,9 +153,12 @@ create modal (aim, subject, experiment, technology, difficulty, template dropdow
 from `GET /templates`), detail drawer (metadata, sections, sources, preview iframe,
 raw JSON), per-section editing + regeneration + save, LaTeX view/edit, DOCX/PDF/HTML
 export with error surfacing, Templates manager (create + sample-PDF import),
-server History (import records onto the board), Login (JWT in memory, attached to
-every call), toasts, retry/delete. Every server call carries a
+server History (import records onto the board), Login (memory token + httpOnly
+cookie; logged-out actions open the login modal instead of failing, and
+templates reload right after login), toasts, retry/delete. Every server call carries a
 180s `AbortSignal` timeout so stalls become errors, never infinite spinners.
+The empty board shows a first-assignment hero with a "Go to dashboard" link back
+to the columns.
 
 `src/pages/*` (router + Query + Monaco variants) are reference implementations kept
 for reuse but currently unwired — nothing imports them.
@@ -163,7 +167,7 @@ for reuse but currently unwired — nothing imports them.
 
 ```bash
 cd services/ai-service && python tests/test_phase1.py  # also test_phase3/5/6/7/8.py
-cd apps/api && npm test                                # 43 passing
+cd apps/api && npm test                                # 55 passing
 ```
 Covered: schemas, viva rejection, regen, renderer, exports, SQL gate, sandbox/proven-fail paths,
 templates/versioning, auth, queue. Live-verified (isolated ports): full generate→export chain,
@@ -178,6 +182,13 @@ network-isolated, capped), retrieved webpages (text-only, size-capped, scripts d
 marked UNTRUSTED in prompts). Enforced caps: 1MB JSON, 25MB uploads, 200KB LaTeX,
 120s compile timeout. Helmet headers; CORS is open (`*`) for local dev — lock down in
 production along with `JWT_SECRET`, `AUTH_REQUIRED=1`, and Redis rate limiting.
+Error contract: clients only ever receive short generic `error` strings
+(`sendError()` in `lib/errors.js`; a final middleware converts anything else,
+including body-parser failures, to JSON). Technical details (stacks, driver text,
+compiler logs, validation dumps) go to the server log only — never the response
+body, the screen, or the browser console. The UI maps transport failures
+(offline/timeout) to friendly copy in one place (`apiFetch` in `src/App.jsx`)
+and never shows status codes.
 
 ## 11. Troubleshooting
 
@@ -190,6 +201,8 @@ production along with `JWT_SECRET`, `AUTH_REQUIRED=1`, and Redis rate limiting.
 | PDF export 502 | Read the message: missing image = pull texlive; otherwise the log tail names the cause |
 | `opacity` looks wrong in Word | Expected: DOCX uses PNG-native transparency (see §7) |
 | Board empty after reload but still logged in | Expected: board rebuilds from server history (no browser storage); login persists via cookie |
+| Logged out on every refresh (prod) | Session cookie blocked cross-site → set `COOKIE_SECURE=1` on the server (SameSite=None; Secure), then log in once |
+| Action fails with login modal popping up | Expected: that IS the logged-out/expired-token flow — log in (or re-log in) and retry |
 | History empties on restart | Expected without Mongo (memory store); set `MONGODB_URI` |
 
 ## 12. Known gaps (audit 2026-10-02; owner in brackets)

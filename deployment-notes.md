@@ -156,6 +156,7 @@ PORT=4000
 MONGODB_URI=mongodb+srv://<DB_USER>:<DB_PASSWORD_URL_ENCODED>@cluster0.igmqkw2.mongodb.net/markly?appName=Cluster0
 JWT_SECRET=<64-hex-chars>
 AUTH_REQUIRED=1
+COOKIE_SECURE=1
 RATE_LIMIT_PER_MIN=60
 # Native-docker variant (NOT the wsl one from Windows dev):
 PDF_COMPILE_CMD=docker run --rm -v "{dir}:/work" -w /work texlive/texlive:latest pdflatex -interaction=nonstopmode -halt-on-error doc.tex
@@ -204,7 +205,9 @@ Deployments → Redeploy with **build cache OFF**.
 | Generate | `completed` — e.g. "Understanding SQL Joins in DBMS", 4 steps |
 | PDF | `POST /api/v1/assignments/:id/pdf` → **200, `application/pdf`, 178,105 bytes, `%PDF-1.7`** (two pdflatex passes in texlive container) |
 | Public HTTPS | `https://13-234-227-216.nip.io/…` → 401 `{"error":"Authentication required"}` (TLS trusted, proxy correct) |
-| Tests | API suite **43/43 pass**; jsdom App E2E 18/18; persistence across restart verified |
+| Error hygiene | Malformed JSON → `400 {"error":"Something went wrong…"}` (was: HTML stack page); error bodies carry only `error`, never `details`/`log` |
+| Session cookies | `Set-Cookie: markly_token=…; HttpOnly; Secure; SameSite=None`; cookie-only `/auth/me` restores session (refresh-proof); logout stays logged out |
+| Tests | API suite **55/55 pass**; jsdom App E2E 18/18; persistence across restart verified |
 | Local machine | idle — no node/python/docker processes, WSL stopped, dev ports free |
 
 ---
@@ -221,6 +224,8 @@ Deployments → Redeploy with **build cache OFF**.
 | 6 | PDF `502 … 'file' cannot be empty` | Server `.env` had `PDF_COMPILE_CMD=` (empty); code used `??` which keeps `""` | `??` → `\|\|` fallback in `compile.js` + real native command in server `.env`; rebuilt image |
 | 7 | Generate returned empty right after deploy | Test fired while ai-service was still booting | Health-wait loop before testing |
 | 8 | Vercel site called `http://127.0.0.1:4000` | `VITE_API_URL` unset at build → fallback baked in | Set env var + cache-off redeploy (§4.5) |
+| 9 | API crash-loop right after a deploy (`findRecord` import error) | Partial file push: new `assignments.js` scp'd without the matching `assignmentStore.js` refactor | Emergency stash to recover, then full consistent file set + rebuild; lesson: never push half a refactor — deploy the whole tested tree |
+| 10 | Refresh logged users out (empty board hero) | Session cookie was `SameSite=Lax` → browsers drop it on Vercel→API cross-site fetch | `COOKIE_SECURE=1` (SameSite=None; Secure) + mirrored attrs on cookie clear; one fresh login mints the new cookie |
 
 General lessons: `docker compose restart` does **not** re-read `env_file`
 (use `--force-recreate`); PowerShell mangles multi-line SSH quoting
@@ -247,8 +252,9 @@ ls data/tex/                                            # PDF work dirs (see not
 - **Backups**: Atlas M0 has basic backups; repo + `.env` contents (kept outside
   git) are the rest. Known minor leak: PDF temp dirs under `data/tex/` are
   never cleaned — purge old `Markly-tex-*` dirs if disk runs low.
-- **Known limits**: API restart logs out all users (re-login fixes it);
-  board state is per-browser `localStorage` (`Markly_*` keys).
+- **Known limits**: API restart wipes memory (password login fails until fresh
+  logins); cookie sessions survive restart (stateless JWT, 7d); board state is
+  React memory rebuilt from server history (zero browser storage).
 
 ## 8. Secrets hygiene
 
