@@ -119,5 +119,9 @@ describe("cookie sessions (refresh-proof without browser storage)", () => {
     assert.equal(out.status, 200);
     const cleared = out.setCookies.find((c) => c.startsWith("markly_token="));
     assert.ok(cleared && /expires=thu, 01 jan 1970/i.test(cleared), "logout must expire the cookie");
+    // Mirrored attributes: strict clients refuse to delete a SameSite/Secure
+    // cookie from a Set-Cookie that doesn't match how it was set.
+    assert.ok(cleared.includes("HttpOnly"), "clear must mirror the session cookie attributes");
+    assert.ok(/samesite=/i.test(cleared), "clear must mirror SameSite");
   });
 });
