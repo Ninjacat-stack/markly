@@ -5,6 +5,11 @@ Assignment compiler: **React → Express → FastAPI → Qwen → validated Assi
 > Phases 0–9 are implemented: generation POC, HTML renderer, section editor,
 > DOCX + LaTeX + containerized PDF, research layer, PDF corpus, SQL checks,
 > template versioning, jobs + auth + hardening, and the full multi-page frontend.
+>
+> **Live in production (2026-10-02):** frontend on Vercel
+> (`https://marklyai.vercel.app`), API + AI service on AWS EC2 behind Caddy
+> HTTPS, MongoDB Atlas. Full topology, setup steps and verification evidence:
+> **`deployment-notes.md`**. Newcomer tour: **`system-overview.md**`.
 
 ## Layout
 
@@ -91,23 +96,24 @@ Header has Templates manager, server History import, and Login. (`src/pages/*` a
 
 ```bash
 cd services/ai-service && python tests/test_phase1.py   # + test_phase3/5/6/7/8.py per subsystem
-cd apps/api && npm test                                 # 27 passing: schemas, templates, renderer, exports, auth, queue
+cd apps/api && npm test                                 # 43 passing: schemas, templates, renderer, exports, auth, queue
 ```
 
-## Verified on 2026-10-01 (Windows, no Docker, no gateway, no Mongo)
+## Verified on 2026-10-02 (production + local)
 
-- AI-service tests pass; API tests 6/6 pass; `vite build` succeeds
-- Live E2E: `POST /api/v1/assignments/generate` with `{aim, subject: DBMS, experimentNumber: 7}`
-  → `status=completed`, 3 objectives, 3 steps, `provider=stub`, template `tcet-computer-engineering` v1; empty `{}` rejected with 400
-- Live document check: `GET /api/v1/assignments/:id/html` (7106 bytes) contains header ref,
-  watermark ref, `opacity: 0.5`, `@page` print CSS and fixed every-page positioning
-- AI service ran with `provider=stub` because no gateway env was configured (expected)
+- AI-service tests pass; API tests **43/43 pass**; `vite build` succeeds
+- Live E2E on the EC2 server: register → JWT → `POST /api/v1/assignments/generate`
+  `{aim, subject: DBMS}` → `status=completed` (real Qwen gateway, not stub);
+  `POST /:id/pdf` → 200 `application/pdf`, 178,105 bytes, `%PDF-1.7`
+  (two pdflatex passes in the texlive container); public HTTPS serves 401
+  correctly at `https://13-234-227-216.nip.io` (see `deployment-notes.md` §5)
 
 ## What remains (later phases)
 
 - Phase 2: ✅ HTML renderer + tenant templates + header/watermark (done)
 - Phases 3–9: ✅ all implemented (see sections above)
-- Deliberately deferred: real-gateway quality QA, texlive end-to-end compile,
-  Redis-backed BullMQ, Mongo-backed history, Qdrant embeddings,
+- Deliberately deferred: Redis-backed BullMQ, Qdrant embeddings,
   full shadcn component set, "Explain this assignment" tutoring feature
+  (texlive end-to-end compile, real-gateway generation and Atlas connection
+  are all live in production — see `deployment-notes.md` §5)
 

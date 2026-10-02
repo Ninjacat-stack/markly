@@ -3,7 +3,7 @@ import { SECTION_NAMES, assignmentContentSchema, generateInputSchema, sectionVal
 import { generateViaAiService, regenerateSectionViaAiService } from "../lib/aiClient.js";
 import { getSubjectProfile } from "../lib/subjects.js";
 import { getDefaultTemplateDoc, getTemplateDoc } from "../lib/templateStore.js";
-import { getRecord, listRecords, nextAssignmentId, saveRecord } from "../lib/assignmentStore.js";
+import { findRecord, listRecordsFor, nextAssignmentId, ownerId, persistRecord, saveRecord } from "../lib/assignmentStore.js";
 import { renderHtml } from "../render/html.js";
 
 export const assignmentsRouter = Router();
@@ -44,6 +44,7 @@ assignmentsRouter.post("/generate", async (req, res) => {
     const record = {
       id,
       status: "completed",
+      userId: ownerId(req),
       input,
       subjectProfile: profile,
       template,
@@ -60,22 +61,8 @@ assignmentsRouter.post("/generate", async (req, res) => {
       createdAt: new Date().toISOString(),
     };
     saveRecord(record);
-
-    // Best-effort Mongo persistence (optional in Phase 1).
-    try {
-      const { Assignment } = await import("../models/index.js");
-      const mongoose = (await import("mongoose")).default;
-      if (mongoose.connection.readyState === 1) {
-        await Assignment.create({
-          userId: "anonymous",
-          input,
-          generatedContent: content.data,
-          status: "completed",
-        });
-      }
-    } catch {
-      // Non-fatal: in-memory record above is the source of truth for the POC.
-    }
+    // Durable per-user write (best-effort; memory remains the hot cache).
+    void persistRecord(record);
 
     return res.json(record);
   } catch (err) {
@@ -84,9 +71,9 @@ assignmentsRouter.post("/generate", async (req, res) => {
   }
 });
 
-// Phase 9: generation history (summaries, newest first).
-assignmentsRouter.get("/", (_req, res) => {
-  const items = listRecords().map((r) => ({
+// Phase 9: generation history (durable + scoped to the requester).
+assignmentsRouter.get("/", async (_req, res) => {
+  const items = (await listRecordsFor(ownerId(_req))).map((r) => ({
     id: r.id,
     status: r.status,
     title: r.content?.title,
@@ -98,23 +85,23 @@ assignmentsRouter.get("/", (_req, res) => {
   res.json({ assignments: items });
 });
 
-assignmentsRouter.get("/:id", (req, res) => {
-  const record = getRecord(req.params.id);
+assignmentsRouter.get("/:id", async (req, res) => {
+  const record = await findRecord(req.params.id, ownerId(req));
   if (!record) return res.status(404).json({ error: "Not found" });
   return res.json(record);
 });
 
 // Phase 2: printable HTML document (header + 50% watermark on every page).
-assignmentsRouter.get("/:id/html", (req, res) => {
-  const record = getRecord(req.params.id);
+assignmentsRouter.get("/:id/html", async (req, res) => {
+  const record = await findRecord(req.params.id, ownerId(req));
   if (!record) return res.status(404).json({ error: "Not found" });
   const seed = getTemplateDoc(record.template?.id) || getDefaultTemplateDoc();
   res.type("html").send(renderHtml(record.content, seed, record.options));
 });
 
 // Presentation options can change after generation (viva heading, typed/handwritten conclusion).
-assignmentsRouter.patch("/:id/options", (req, res) => {
-  const record = getRecord(req.params.id);
+assignmentsRouter.patch("/:id/options", async (req, res) => {
+  const record = await findRecord(req.params.id, ownerId(req));
   if (!record) return res.status(404).json({ error: "Not found" });
   const { includeVivaTitle, typedConclusion } = req.body ?? {};
   if (includeVivaTitle !== undefined && typeof includeVivaTitle !== "boolean") {
@@ -134,7 +121,7 @@ assignmentsRouter.patch("/:id/options", (req, res) => {
 
 // Phase 3: regenerate one section; everything else stays untouched.
 assignmentsRouter.post("/:id/regenerate-section", async (req, res) => {
-  const record = getRecord(req.params.id);
+  const record = await findRecord(req.params.id, ownerId(req));
   if (!record) return res.status(404).json({ error: "Not found" });
   const section = req.body?.section;
   if (!SECTION_NAMES.includes(section)) {
@@ -159,6 +146,7 @@ assignmentsRouter.post("/:id/regenerate-section", async (req, res) => {
     record.content = { ...record.content, [section]: value.data };
     record.updatedAt = new Date().toISOString();
     saveRecord(record);
+    void persistRecord(record);
     return res.json(record);
   } catch (err) {
     console.error(`[api] section regeneration failed for ${record.id}:`, String(err));
@@ -167,8 +155,8 @@ assignmentsRouter.post("/:id/regenerate-section", async (req, res) => {
 });
 
 // Phase 3: save user-edited content (full re-validation).
-assignmentsRouter.put("/:id", (req, res) => {
-  const record = getRecord(req.params.id);
+assignmentsRouter.put("/:id", async (req, res) => {
+  const record = await findRecord(req.params.id, ownerId(req));
   if (!record) return res.status(404).json({ error: "Not found" });
   const parsed = assignmentContentSchema.safeParse(req.body?.content);
   if (!parsed.success) {
@@ -183,7 +171,7 @@ assignmentsRouter.put("/:id", (req, res) => {
 
 // Phase 4: DOCX download (deterministic template injection, not LLM output).
 assignmentsRouter.get("/:id/docx", async (req, res) => {
-  const record = getRecord(req.params.id);
+  const record = await findRecord(req.params.id, ownerId(req));
   if (!record) return res.status(404).json({ error: "Not found" });
   try {
     const { renderDocx } = await import("../render/docx.js");
@@ -199,7 +187,7 @@ assignmentsRouter.get("/:id/docx", async (req, res) => {
 
 // Phase 4: view LaTeX source (editable in the frontend via Monaco).
 assignmentsRouter.get("/:id/latex", async (req, res) => {
-  const record = getRecord(req.params.id);
+  const record = await findRecord(req.params.id, ownerId(req));
   if (!record) return res.status(404).json({ error: "Not found" });
   if (record.latexOverride) return res.json({ latex: record.latexOverride, edited: true });
   const { renderLatex } = await import("../render/latex.js");
@@ -208,8 +196,8 @@ assignmentsRouter.get("/:id/latex", async (req, res) => {
 });
 
 // Phase 4: save user-edited LaTeX (treated as untrusted input to the compiler).
-assignmentsRouter.put("/:id/latex", (req, res) => {
-  const record = getRecord(req.params.id);
+assignmentsRouter.put("/:id/latex", async (req, res) => {
+  const record = await findRecord(req.params.id, ownerId(req));
   if (!record) return res.status(404).json({ error: "Not found" });
   const latex = req.body?.latex;
   if (typeof latex !== "string" || latex.length < 10 || latex.length > 200000) {
@@ -223,7 +211,7 @@ assignmentsRouter.put("/:id/latex", (req, res) => {
 
 // Phase 4: compile to PDF inside an isolated container; failures are explicit.
 assignmentsRouter.post("/:id/pdf", async (req, res) => {
-  const record = getRecord(req.params.id);
+  const record = await findRecord(req.params.id, ownerId(req));
   if (!record) return res.status(404).json({ error: "Not found" });
   try {
     const [{ renderLatex }, { compileLatexToPdf, checkCompiler }] = await Promise.all([
@@ -251,3 +239,4 @@ assignmentsRouter.post("/:id/pdf", async (req, res) => {
     return res.status(502).json({ error: "PDF pipeline failed", details: String(err).slice(0, 500) });
   }
 });
+

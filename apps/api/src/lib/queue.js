@@ -1,5 +1,5 @@
 import { assignmentContentSchema, generateInputSchema } from "../schemas.js";
-import { getRecord, nextAssignmentId, saveRecord } from "./assignmentStore.js";
+import { getRecord, nextAssignmentId, persistRecord, saveRecord } from "./assignmentStore.js";
 import { generateViaAiService } from "./aiClient.js";
 import { getSubjectProfile } from "./subjects.js";
 import { getDefaultTemplateDoc, getTemplateDoc } from "./templateStore.js";
@@ -22,8 +22,8 @@ const ENQUEUE_TIMEOUT_MS = Number(process.env.BULLMQ_ENQUEUE_TIMEOUT_MS ?? 10000
 // In-process runner: the throw below is for the BullMQ worker path only.
 // Here the failure is already recorded on the job, so swallow the rejection
 // (an unhandled rejection would crash the process / fail the test run).
-function runInProcess(input, jobId) {
-  runGenerationJob(input, jobId).catch(() => {});
+function runInProcess(input, jobId, userId) {
+  runGenerationJob(input, jobId, userId).catch(() => {});
 }
 
 export async function closeQueue() {
@@ -64,8 +64,8 @@ async function ensureBullmq() {
     };
     bullmqQueue = new Queue("Markly-generation", { connection });
     bullmqWorker = new Worker(
-      "Markly-generation",
-      async (bjob) => runGenerationJob(bjob.data.input, bjob.data.jobId),
+      "assignmentai-generation",
+      async (bjob) => runGenerationJob(bjob.data.input, bjob.data.jobId, bjob.data.userId),
       { connection },
     );
     const worker = bullmqWorker;
@@ -83,7 +83,7 @@ async function ensureBullmq() {
   }
 }
 
-export async function createJob(type, input) {
+export async function createJob(type, input, userId = "anonymous") {
   if (type !== "generate") throw new Error('Unsupported job type (only "generate")');
   const parsed = generateInputSchema.safeParse(input ?? {});
   if (!parsed.success) throw new Error("Invalid input for generation job");
@@ -94,6 +94,7 @@ export async function createJob(type, input) {
     status: "pending",
     progress: 0,
     backend: queueBackend(),
+    userId,
     input: parsed.data,
     assignmentId: null,
     error: null,
@@ -103,7 +104,7 @@ export async function createJob(type, input) {
   jobs.set(job.id, job);
   const q = await ensureBullmq();
   if (q) {
-    const add = q.add("generate", { jobId: job.id, input: job.input });
+    const add = q.add("generate", { jobId: job.id, input: job.input, userId: job.userId });
     // Swallow the loser's late rejection (the race below already moved on).
     add.catch(() => {});
     const timeout = new Promise((_, reject) =>
@@ -113,15 +114,15 @@ export async function createJob(type, input) {
       await Promise.race([add, timeout]);
     } catch (err) {
       console.warn("[queue] BullMQ enqueue failed, running in-process:", String(err).slice(0, 200));
-      setImmediate(() => runInProcess(job.input, job.id));
+      setImmediate(() => runInProcess(job.input, job.id, job.userId));
     }
   } else {
-    setImmediate(() => runInProcess(job.input, job.id));
+    setImmediate(() => runInProcess(job.input, job.id, job.userId));
   }
   return job;
 }
 
-export async function runGenerationJob(input, jobId) {
+export async function runGenerationJob(input, jobId, userId = "anonymous") {
   const job = jobs.get(jobId);
   if (!job) throw new Error("Job not found");
   const aiBase = process.env.AI_SERVICE_URL ?? "http://127.0.0.1:8001";
@@ -138,6 +139,7 @@ export async function runGenerationJob(input, jobId) {
     const record = {
       id: nextAssignmentId(),
       status: "completed",
+      userId,
       input,
       subjectProfile: profile,
       template: seed?.template
@@ -159,6 +161,7 @@ export async function runGenerationJob(input, jobId) {
       createdAt: new Date().toISOString(),
     };
     saveRecord(record);
+    void persistRecord(record);
     setStatus(job, "completed", { progress: 100, assignmentId: record.id });
     return record;
   } catch (err) {

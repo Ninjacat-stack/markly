@@ -60,6 +60,9 @@ export const Assignment = model(
   new Schema(
     {
       userId: String,
+      // Full durable record (Phase 9+: the in-memory store is only a hot cache).
+      recordId: { type: String, index: true, sparse: true },
+      data: Schema.Types.Mixed,
       tenantId: String,
       departmentId: String,
       subjectId: String,

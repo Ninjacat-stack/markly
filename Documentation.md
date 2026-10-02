@@ -1,7 +1,9 @@
 # Markly — Documentation
 
-> Last audited: 2026-10-01. Covers all of Phases 0–9 as built.
-> Companion file: `Utilities.md` (every external dependency/service).
+> Last audited: 2026-10-02. Covers all of Phases 0–9 as built.
+> Companion files: `Utilities.md` (every external dependency/service),
+> `system-overview.md` (guided tour: click journeys, state map, cheat sheet),
+> `deployment-notes.md` (production topology, setup, verification).
 
 ## 1. What this is
 
@@ -69,8 +71,9 @@ Open `:5173`. Health checks: `:8001/health`, `:4000/api/v1/health`
 API (`apps/api/.env`): `PORT` (4000), `AI_SERVICE_URL` (http://127.0.0.1:8001),
 `MONGODB_URI` (unset = in-memory), `RATE_LIMIT_PER_MIN` (60),
 `JWT_SECRET` (set in production), `AUTH_REQUIRED` (`1` enforces tokens, default open),
-`REDIS_URL` + `BULLMQ_ENABLED=1` (unset = in-process jobs), `PDF_COMPILE_CMD` (default `docker run … texlive…`;
-on Windows-with-WSL-Docker use `wsl docker run --rm -v "$(wslpath '{dir}'):/work" -w /work texlive/texlive:latest …`).
+`REDIS_URL` + `BULLMQ_ENABLED=1` (unset = in-process jobs), `PDF_COMPILE_CMD` (empty/unset =
+native-docker default since the `||`-fallback fix; on Windows-with-WSL-Docker use
+`wsl docker run --rm -v "{wslDir}:/work" -w /work texlive/texlive:latest …`).
 
 AI (`services/ai-service/.env`): `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`
 (all three or stub mode), `PORT` (8001), `TAVILY_API_KEY` / `SEARXNG_URL`
@@ -114,7 +117,7 @@ AI service: `GET /health`, `POST /v1/generate`, `POST /v1/regenerate-section`,
 
 ## 7. Data & templates
 
-- Assignment record: `id, status, input, subjectProfile, template{id,version}, content, sources[], provenance{provider,model,promptVersion,validation,researchProvider}, createdAt/updatedAt, editedByUser?, latexOverride?`
+- Assignment record: `id, status, userId, input, subjectProfile, template{id,version}, options, content, sources[], provenance{…}, createdAt/updatedAt, editedByUser?, latexOverride?` — durable in Mongo (`Assignment.data` keyed by `recordId`) when connected, memory is only a hot cache. Reads are owner-scoped: legacy/`anonymous` records are shared, owned records visible to their owner only. Board layout (columns/order) stays in browser localStorage — UI preference, not data.
 - Templates are tenant **data**, never code. Seeds (`src/templates/*.json`) load as v1;
   `updateTemplate()` always forks a new immutable version; old versions stay readable,
   so historical assignments never change. Mongo `Template` upserts are best-effort.
@@ -155,7 +158,7 @@ for reuse but currently unwired — nothing imports them.
 
 ```bash
 cd services/ai-service && python tests/test_phase1.py  # also test_phase3/5/6/7/8.py
-cd apps/api && npm test                                # 27 passing
+cd apps/api && npm test                                # 43 passing
 ```
 Covered: schemas, viva rejection, regen, renderer, exports, SQL gate, sandbox/proven-fail paths,
 templates/versioning, auth, queue. Live-verified (isolated ports): full generate→export chain,
@@ -184,12 +187,12 @@ production along with `JWT_SECRET`, `AUTH_REQUIRED=1`, and Redis rate limiting.
 | Board shows stale "default v1" template | Pre-template record in localStorage → clear site data (keys are now `…v2`) |
 | History empties on restart | Expected without Mongo (memory store); set `MONGODB_URI` |
 
-## 12. Known gaps (audit 2026-10-01; owner in brackets)
+## 12. Known gaps (audit 2026-10-02; owner in brackets)
 
-- [you] Pull texlive once (`docker pull texlive/texlive:latest` in WSL) + set `PDF_COMPILE_CMD` for Windows→WSL path mapping
-- [you] Set `TAVILY_API_KEY` or `SEARXNG_URL` to activate research (silently skipped today)
-- [you] Production secrets/CORS/rate-limit tightening when deploying (`JWT_SECRET`, `AUTH_REQUIRED=1`, CORS origins, Redis limiter)
-- [me, next] Mongo-backed history/list (list reads memory today; restart wipes it even with Mongo connected) + persist regen/PUT/template edits to Mongo
+- [done in prod] texlive pulled + end-to-end PDF compile verified on EC2 (178 KB, `%PDF-1.7`)
+- [done in prod] real Qwen gateway live (`Qwen3.6-35B-A3B`); MongoDB Atlas connected (`[api] connected to MongoDB`); frontend on Vercel (`marklyai.vercel.app`) — see `deployment-notes.md`
+- [you] Production hardening still open: CORS is `*` (fine for now, lock to the Vercel origin later), `JWT_SECRET` rotation schedule, Redis rate limiting
+- [me, next] Template edits still memory-only (persist on save); reload users from Mongo on boot (restart logs everyone out today)
 - [me, next] Route-level tests for examples/jobs/auth/templates-from-pdf proxies (live-verified only)
 - [me, next] `packages/shared` is load-bearing for nothing (profiles loaded by path) — either wire it as a real dependency or fold it
 - [later] Qdrant embeddings behind `retrieve_examples()` (keyword retrieval is fine at current corpus size)

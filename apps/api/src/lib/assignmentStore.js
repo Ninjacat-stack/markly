@@ -1,50 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+// Shared assignment record store.
+// Memory is the hot cache; Mongo (when connected) is the durable source.
+// Every record carries userId ("anonymous" for logged-out/dev use); reads are
+// scoped so users only ever see legacy/shared records plus their own.
 
-// Shared assignment record store (extracted for reuse by routes + job queue).
-// Persisted to a JSON file so records survive API restarts — otherwise every
-// restart wipes history and old ids 404 for the frontend.
 const store = new Map();
 let counter = 0;
-
-const dataDir = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "data");
-const dataFile = join(dataDir, "assignments.json");
-
-function loadPersisted() {
-  if (!existsSync(dataFile)) return;
-  try {
-    const parsed = JSON.parse(readFileSync(dataFile, "utf8"));
-    for (const record of parsed.records ?? []) {
-      if (record?.id) store.set(record.id, record);
-    }
-    counter = Number(parsed.counter) || 0;
-  } catch (err) {
-    console.warn("[store] could not load persisted assignments, starting empty:", String(err));
-  }
-}
-
-function persist() {
-  // node --test doesn't set NODE_ENV; detect the test runner so tests never
-  // write fixtures into the real runtime data file.
-  if (
-    process.env.NODE_ENV === "test" ||
-    process.env.NODE_TEST_CONTEXT ||
-    process.execArgv.includes("--test")
-  ) {
-    return;
-  }
-  try {
-    mkdirSync(dataDir, { recursive: true });
-    const tmp = `${dataFile}.tmp`;
-    writeFileSync(tmp, JSON.stringify({ counter, records: [...store.values()] }));
-    renameSync(tmp, dataFile);
-  } catch (err) {
-    console.warn("[store] could not persist assignments:", String(err));
-  }
-}
-
-loadPersisted();
 
 export function nextAssignmentId() {
   counter += 1;
@@ -53,7 +13,6 @@ export function nextAssignmentId() {
 
 export function saveRecord(record) {
   store.set(record.id, record);
-  persist();
   return record;
 }
 
@@ -61,6 +20,78 @@ export function getRecord(id) {
   return store.get(id) ?? null;
 }
 
+export function ownerId(req) {
+  return req?.user?.sub ?? "anonymous";
+}
+
+export function canAccess(record, requesterId) {
+  if (!record) return false;
+  const owner = record.userId ?? record.data?.userId ?? "anonymous";
+  return owner === "anonymous" || owner === (requesterId ?? "anonymous");
+}
+
+// Best-effort durable write (no-op without Mongo). Fire-and-forget safe.
+export async function persistRecord(record) {
+  try {
+    const mongoose = (await import("mongoose")).default;
+    if (mongoose.connection.readyState !== 1) return false;
+    const { Assignment } = await import("../models/index.js");
+    await Assignment.updateOne(
+      { recordId: record.id },
+      { $set: { recordId: record.id, userId: record.userId ?? "anonymous", data: record } },
+      { upsert: true },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Memory first, then Mongo (warming the cache). Null when missing OR forbidden.
+export async function findRecord(id, requesterId) {
+  const mem = store.get(id) ?? null;
+  if (mem) return canAccess(mem, requesterId) ? mem : null;
+  try {
+    const mongoose = (await import("mongoose")).default;
+    if (mongoose.connection.readyState !== 1) return null;
+    const { Assignment } = await import("../models/index.js");
+    const doc = await Assignment.findOne({ recordId: id }).lean();
+    const record = doc?.data ?? null;
+    if (!record) return null;
+    if (!canAccess(record, requesterId)) return null;
+    store.set(record.id, record);
+    return record;
+  } catch {
+    return null;
+  }
+}
+
+function compareNewest(a, b) {
+  return String(b?.createdAt ?? "").localeCompare(String(a?.createdAt ?? ""));
+}
+
+// Union of memory + Mongo visible to this requester (memory wins on conflict).
+export async function listRecordsFor(requesterId) {
+  const seen = new Map();
+  for (const r of store.values()) {
+    if (canAccess(r, requesterId)) seen.set(r.id, r);
+  }
+  try {
+    const mongoose = (await import("mongoose")).default;
+    if (mongoose.connection.readyState === 1) {
+      const { Assignment } = await import("../models/index.js");
+      const docs = await Assignment.find({}).lean();
+      for (const d of docs) {
+        const r = d?.data;
+        if (r?.id && !seen.has(r.id) && canAccess(r, requesterId)) seen.set(r.id, r);
+      }
+    }
+  } catch {
+    // Memory results stand on their own.
+  }
+  return [...seen.values()].sort(compareNewest);
+}
+
 export function listRecords() {
-  return [...store.values()].sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+  return [...store.values()].sort(compareNewest);
 }
