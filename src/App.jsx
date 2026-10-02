@@ -405,6 +405,8 @@ export default function App() {
   const [seq, setSeq] = useState(101)
   const [selectedKey, setSelectedKey] = useState(null)
   const [createOpen, setCreateOpen] = useState(false)
+  // Empty hero offers a way back to the board (dashboard) even with zero cards.
+  const [showBoard, setShowBoard] = useState(false)
   const [prefill, setPrefill] = useState(null)
   const [toasts, setToasts] = useState([])
   const [serviceUp, setServiceUp] = useState(null)
@@ -756,12 +758,13 @@ export default function App() {
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4 sm:px-6">
-          {issues.length === 0 ? (
+          {issues.length === 0 && !showBoard ? (
             <EmptyState
               onCreate={(ex) => {
                 setPrefill(ex ?? null)
                 setCreateOpen(true)
               }}
+              onShowBoard={() => setShowBoard(true)}
             />
           ) : (
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -864,7 +867,7 @@ export default function App() {
 
 /* -------------------------------- empty state ------------------------------ */
 
-function EmptyState({ onCreate }) {
+function EmptyState({ onCreate, onShowBoard }) {
   return (
     <div className="mx-auto flex max-w-xl flex-col items-center rounded-xl border border-[#DFE1E6] bg-white px-8 py-12 text-center shadow-[0_1px_2px_rgba(9,30,66,0.08)]">
       <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#E9F2FF] text-[#0C66E4]">
@@ -878,6 +881,9 @@ function EmptyState({ onCreate }) {
       <button onClick={() => onCreate(null)} className="mt-5 inline-flex items-center gap-1.5 rounded-md bg-[#0C66E4] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#0055CC]">
         <Icon name="plus" className="h-4 w-4" />
         Create assignment
+      </button>
+      <button type="button" onClick={onShowBoard} className="mt-3 text-[13px] font-medium text-[#0C66E4] hover:underline">
+        Go to dashboard →
       </button>
       <div className="mt-6 w-full border-t border-[#EBECF0] pt-4 text-left">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-[#626F86]">Or start from an example</p>
