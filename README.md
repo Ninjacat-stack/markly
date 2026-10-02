@@ -52,7 +52,8 @@ cd apps/api && npm install && npm start   # :4000, in-memory mode unless MONGODB
 npm install && npm run dev                # :5173
 ```
 
-Open `:5173`: a workspace board (To Do / In Progress / Done, persisted locally).
+Open `:5173`: a workspace board (To Do / In Progress / Done) that boots from
+server history — no browser storage; reload rebuilds from MongoDB and logs you out.
 Create cards with aim + subject + template dropdown; the detail drawer shows
 sections, sources, document preview, per-section editing + regeneration, LaTeX
 editing, and DOCX/PDF/HTML export. Creation asks about viva heading (heading only,

@@ -80,7 +80,7 @@ AI (`services/ai-service/.env`): `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`
 (either activates research), `SANDBOX_DOCKER` (`docker`; bogus value = graceful skip).
 
 Frontend (`.env`): `VITE_API_URL` (http://127.0.0.1:4000; baked at `vite build` time).
-Login token persists in `localStorage` (`Markly_token`).
+No browser storage anywhere: the login token lives in memory (reload logs out).
 
 ## 5. Generation pipeline (where each step lives)
 
@@ -117,7 +117,7 @@ AI service: `GET /health`, `POST /v1/generate`, `POST /v1/regenerate-section`,
 
 ## 7. Data & templates
 
-- Assignment record: `id, status, userId, input, subjectProfile, template{id,version}, options, content, sources[], provenance{…}, createdAt/updatedAt, editedByUser?, latexOverride?` — durable in Mongo (`Assignment.data` keyed by `recordId`) when connected, memory is only a hot cache. Reads are owner-scoped: legacy/`anonymous` records are shared, owned records visible to their owner only. Board layout (columns/order) stays in browser localStorage — UI preference, not data.
+- Assignment record: `id, status, userId, input, subjectProfile, template{id,version}, options, content, sources[], provenance{…}, createdAt/updatedAt, editedByUser?, latexOverride?` —   durable in Mongo (`Assignment.data` keyed by `recordId`) when connected, memory is only a hot cache. Reads are owner-scoped: legacy/`anonymous` records are shared, owned records visible to their owner only. Nothing persists in the browser — reload rebuilds the board from the server.
 - Templates are tenant **data**, never code. Seeds (`src/templates/*.json`) load as v1;
   `updateTemplate()` always forks a new immutable version; old versions stay readable,
   so historical assignments never change. Mongo `Template` upserts are best-effort.
@@ -142,13 +142,14 @@ AI service: `GET /health`, `POST /v1/generate`, `POST /v1/regenerate-section`,
 ## 8. Frontend (Jira-style workspace board)
 
 Single-page board in `src/App.jsx` (no router): To Do / In Progress / Done columns
-backed by `localStorage` (keys `…v2`; bump the suffix to invalidate stale shapes),
+with zero browser storage — the board boots from server history (`GET /assignments`,
+Mongo-backed) and deletes go server-side (`DELETE /assignments/:id`, ownership-checked),
 create modal (aim, subject, experiment, technology, difficulty, template dropdown
 from `GET /templates`), detail drawer (metadata, sections, sources, preview iframe,
 raw JSON), per-section editing + regeneration + save, LaTeX view/edit, DOCX/PDF/HTML
 export with error surfacing, Templates manager (create + sample-PDF import),
-server History (import records onto the board), Login (JWT stored and attached),
-toasts, retry/delete. Every server call carries a
+server History (import records onto the board), Login (JWT in memory, attached to
+every call), toasts, retry/delete. Every server call carries a
 180s `AbortSignal` timeout so stalls become errors, never infinite spinners.
 
 `src/pages/*` (router + Query + Monaco variants) are reference implementations kept
@@ -184,7 +185,7 @@ production along with `JWT_SECRET`, `AUTH_REQUIRED=1`, and Redis rate limiting.
 | Empty `{}` → 400 | Expected: aim is mandatory |
 | PDF export 502 | Read the message: missing image = pull texlive; otherwise the log tail names the cause |
 | `opacity` looks wrong in Word | Expected: DOCX uses PNG-native transparency (see §7) |
-| Board shows stale "default v1" template | Pre-template record in localStorage → clear site data (keys are now `…v2`) |
+| Board empty + logged out after reload | Expected: no browser storage — board rebuilds from server history, log in again |
 | History empties on restart | Expected without Mongo (memory store); set `MONGODB_URI` |
 
 ## 12. Known gaps (audit 2026-10-02; owner in brackets)

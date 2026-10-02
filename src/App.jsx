@@ -1,29 +1,36 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:4000'
-const LS_ISSUES = 'Markly.issues.v2'
-const LS_SEQ = 'Markly.seq.v2'
-const LS_SESSION = 'Markly.session.v1'
 
-function loadSession() {
-  try {
-    const raw = localStorage.getItem(LS_SESSION)
-    if (!raw) return null
-    const s = JSON.parse(raw)
-    return s?.token ? s : null
-  } catch {
-    return null
-  }
-}
+// No browser storage anywhere in this app: board state lives in React state
+// (gone on reload), records live in MongoDB via the API, and the auth token
+// lives in memory (reloading logs you out — by design).
 
 // Auth headers for every API call (no-op when logged out; API runs open dev mode).
+let memoryToken = ''
 function authHeaders(extra = {}) {
-  try {
-    const raw = localStorage.getItem(LS_SESSION)
-    const token = raw ? JSON.parse(raw)?.token : ''
-    return token ? { ...extra, Authorization: `Bearer ${token}` } : extra
-  } catch {
-    return extra
+  return memoryToken ? { ...extra, Authorization: `Bearer ${memoryToken}` } : extra
+}
+
+// Server record -> board card (keyed by record id so reloads stay consistent).
+function recordToIssue(record) {
+  const c = record.content ?? {}
+  return {
+    key: record.id,
+    aim: c.aim ?? 'Imported assignment',
+    description: '',
+    subject: record.input?.subject ?? 'DBMS',
+    experimentNumber: c.experimentNumber ? String(c.experimentNumber) : '',
+    technology: record.input?.technology ?? '',
+    difficulty: 'Intermediate',
+    templateId: record.template?.id ?? '',
+    includeVivaTitle: record.options?.includeVivaTitle ?? false,
+    typedConclusion: record.options?.typedConclusion ?? true,
+    status: 'done',
+    error: '',
+    stale: false,
+    record,
+    createdAt: record.createdAt ?? new Date().toISOString(),
   }
 }
 
@@ -91,15 +98,6 @@ function priorityOf(difficulty) {
   if (difficulty === 'Advanced') return { label: 'High', color: '#E56910', glyph: '▲' }
   if (difficulty === 'Introductory') return { label: 'Low', color: '#1F8455', glyph: '▼' }
   return { label: 'Medium', color: '#0C66E4', glyph: '＝' }
-}
-
-function loadJSON(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key)
-    return raw ? JSON.parse(raw) : fallback
-  } catch {
-    return fallback
-  }
 }
 
 /* ---------------------------------- icons --------------------------------- */
@@ -390,11 +388,8 @@ function IssueCard({ issue, selected, onSelect, onRetry }) {
 /* ---------------------------------- app ------------------------------------ */
 
 export default function App() {
-  const [issues, setIssues] = useState(() => loadJSON(LS_ISSUES, []))
-  const [seq, setSeq] = useState(() => {
-    const v = Number(localStorage.getItem(LS_SEQ))
-    return Number.isFinite(v) && v > 0 ? v : 101
-  })
+  const [issues, setIssues] = useState([])
+  const [seq, setSeq] = useState(101)
   const [selectedKey, setSelectedKey] = useState(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [prefill, setPrefill] = useState(null)
@@ -404,17 +399,12 @@ export default function App() {
   const [templatesOpen, setTemplatesOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [loginOpen, setLoginOpen] = useState(false)
-  const [session, setSession] = useState(() => loadSession())
+  const [session, setSession] = useState(null)
   const toastId = useRef(0)
 
   function saveSession(next) {
     setSession(next)
-    try {
-      if (next) localStorage.setItem(LS_SESSION, JSON.stringify(next))
-      else localStorage.removeItem(LS_SESSION)
-    } catch {
-      /* ignore */
-    }
+    memoryToken = next?.token ?? ''
   }
 
   const pushToast = useCallback((kind, title, message) => {
@@ -423,21 +413,18 @@ export default function App() {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4500)
   }, [])
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(LS_ISSUES, JSON.stringify(issues))
-    } catch {
-      /* storage may be full — session only */
-    }
-  }, [issues])
+  // Logged-out actions must invite login instead of failing with a 401:
+  // the API enforces tokens when AUTH_REQUIRED=1.
+  const handleAuthRequired = useCallback(() => {
+    setLoginOpen(true)
+    pushToast('error', 'Login required', 'Please log in to continue — then retry the action.')
+  }, [pushToast])
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(LS_SEQ, String(seq))
-    } catch {
-      /* ignore */
-    }
-  }, [seq])
+  const ensureSession = useCallback(() => {
+    if (session?.token) return true
+    handleAuthRequired()
+    return false
+  }, [handleAuthRequired, session])
 
   useEffect(() => {
     fetch(`${API_BASE}/api/v1/health`)
@@ -447,6 +434,11 @@ export default function App() {
       .then((r) => r.json())
       .then((d) => setTemplates(d.templates ?? []))
       .catch(() => setTemplates([]))
+    // Board boots from the server (Mongo-backed history), never the browser.
+    fetch(`${API_BASE}/api/v1/assignments`, { headers: authHeaders() })
+      .then((r) => r.json())
+      .then((d) => setIssues((d.assignments ?? []).map(recordToIssue)))
+      .catch(() => { /* service banner covers unreachable servers */ })
   }, [])
 
   // Payload is built from the issue object itself — never captured inside a
@@ -455,6 +447,8 @@ export default function App() {
   const startGeneration = useCallback(
     async (issue) => {
       const key = issue.key
+      // Don't burn the card on a guaranteed 401: invite login first.
+      if (!ensureSession()) return
       const payload = {
         aim: issue.aim,
         description: issue.description || undefined,
@@ -463,8 +457,11 @@ export default function App() {
         technology: issue.technology || undefined,
         templateId: issue.templateId || undefined,
         difficulty: issue.difficulty || undefined,
+        includeVivaTitle: issue.includeVivaTitle ?? issue.record?.options?.includeVivaTitle ?? false,
+        typedConclusion: issue.typedConclusion ?? issue.record?.options?.typedConclusion ?? true,
       }
       setIssues((prev) => prev.map((it) => (it.key === key ? { ...it, status: 'inprogress', error: '', stale: false } : it)))
+      let status = 0
       try {
         const res = await fetch(`${API_BASE}/api/v1/assignments/generate`, {
           method: 'POST',
@@ -473,19 +470,26 @@ export default function App() {
           // Never spin forever: a stalled gateway fails here instead of hanging the card.
           signal: AbortSignal.timeout(180000),
         })
+        status = res.status
         const data = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(data?.error ? String(data.error) : `Request failed (${res.status})`)
         if (!data?.content) throw new Error('Service returned an empty assignment')
-        setIssues((prev) => prev.map((it) => (it.key === key ? { ...it, status: 'done', record: data, stale: false } : it)))
-        setSelectedKey(key)
-        pushToast('success', `${key} generated`, 'Assignment content is ready for review.')
+        // Rekey the card onto the server record id so reloads stay consistent.
+        setIssues((prev) => prev.map((it) => (it.key === key ? { ...recordToIssue(data), key: data.id } : it)))
+        setSelectedKey(data.id)
+        pushToast('success', `${data.id} generated`, 'Assignment content is ready for review.')
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
+        // Token may have expired mid-session: same login invitation, friendlier message.
+        let message = err instanceof Error ? err.message : String(err)
+        if (status === 401) {
+          message = 'Please log in to continue — then retry generation.'
+          handleAuthRequired()
+        }
         setIssues((prev) => prev.map((it) => (it.key === key ? { ...it, status: 'failed', error: message } : it)))
         pushToast('error', `${key} failed`, message)
       }
     },
-    [pushToast],
+    [pushToast, ensureSession, handleAuthRequired],
   )
 
   const runGeneration = useCallback(
@@ -560,12 +564,31 @@ export default function App() {
   )
 
   const deleteIssue = useCallback(
-    (key) => {
+    async (key) => {
+      const target = issues.find((it) => it.key === key)
+      const recordId = target?.record?.id
+      // Server-side delete (memory + Mongo); cards without records only exist locally.
+      if (recordId) {
+        try {
+          const res = await fetch(`${API_BASE}/api/v1/assignments/${recordId}`, {
+            method: 'DELETE',
+            headers: authHeaders(),
+            signal: AbortSignal.timeout(30000),
+          })
+          if (!res.ok && res.status !== 404) {
+            const data = await res.json().catch(() => ({}))
+            throw new Error(data?.error ?? `Delete failed (${res.status})`)
+          }
+        } catch (err) {
+          pushToast('error', `${key} not deleted`, err instanceof Error ? err.message : String(err))
+          return
+        }
+      }
       setIssues((prev) => prev.filter((it) => it.key !== key))
       setSelectedKey(null)
       pushToast('success', `${key} deleted`, 'The assignment was removed.')
     },
-    [pushToast],
+    [pushToast, issues],
   )
 
   const refreshTemplates = useCallback(async () => {
@@ -585,28 +608,10 @@ export default function App() {
           if (!r.ok) throw new Error(`Load failed (${r.status})`)
           return r.json()
         })
-        const c = record.content ?? {}
-        const key = `ASG-${seq}`
-        setSeq((s) => s + 1)
-        setIssues((prev) => [
-          {
-            key,
-            aim: c.aim ?? 'Imported assignment',
-            description: '',
-            subject: record.input?.subject ?? 'DBMS',
-            experimentNumber: c.experimentNumber ? String(c.experimentNumber) : '',
-            technology: record.input?.technology ?? '',
-            difficulty: 'Intermediate',
-            templateId: record.template?.id ?? '',
-            status: 'done',
-            error: '',
-            record,
-            createdAt: record.createdAt ?? new Date().toISOString(),
-          },
-          ...prev,
-        ])
+        // One card per server record: skip when already on the board.
+        setIssues((prev) => (prev.some((it) => it.key === record.id) ? prev : [recordToIssue(record), ...prev]))
         setHistoryOpen(false)
-        setSelectedKey(key)
+        setSelectedKey(record.id)
       } catch (err) {
         pushToast('error', 'Import failed', err instanceof Error ? err.message : String(err))
       }
@@ -622,6 +627,10 @@ export default function App() {
         headers: authHeaders(),
         signal: AbortSignal.timeout(180000),
       })
+      if (res.status === 401) {
+        handleAuthRequired()
+        return
+      }
       if (res.status === 404) {
         markStale(issue.key)
         pushToast('error', 'Document cleared', 'The service no longer has this record — regenerate the assignment to restore exports.')
@@ -767,6 +776,7 @@ export default function App() {
           onDownload={() => downloadHtml(selected)}
           onRecordUpdate={(key, record) => setIssues((prev) => prev.map((it) => (it.key === key ? { ...it, record, stale: false } : it)))}
           onMarkStale={markStale}
+          onAuthRequired={handleAuthRequired}
           onOpenPreview={() => window.open(`${API_BASE}/api/v1/assignments/${selected.record.id}/html`, '_blank', 'noopener')}
           apiBase={API_BASE}
         />
@@ -803,6 +813,7 @@ export default function App() {
           onLogin={(s) => {
             saveSession(s)
             setLoginOpen(false)
+            refreshTemplates()
             pushToast('success', 'Logged in', s.email)
           }}
         />
@@ -865,7 +876,7 @@ function EmptyState({ onCreate }) {
 
 /* ------------------------------- detail drawer ----------------------------- */
 
-function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPreview, onRecordUpdate, onMarkStale, apiBase }) {
+function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPreview, onRecordUpdate, onMarkStale, onAuthRequired, apiBase }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showRawJson, setShowRawJson] = useState(false)
   const [exportBusy, setExportBusy] = useState('')
@@ -908,6 +919,14 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
     return data?.error ?? `Request failed (${res.status})`
   }
 
+  // 401 (missing/expired token) must invite login, not just stain the drawer with an error.
+  function throwIfAuth(res) {
+    if (res.status === 401) {
+      onAuthRequired?.()
+      throw new Error('Please log in to continue — then retry.')
+    }
+  }
+
   async function exportFile(kind) {
     const recordId = issue.record?.id
     if (!recordId) return
@@ -920,6 +939,7 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
         body: kind === 'pdf' ? '{}' : undefined,
         signal: AbortSignal.timeout(180000),
       })
+      throwIfAuth(res)
       if (res.status === 404) {
         onMarkStale(issue.key)
         throw new Error('This record was cleared on the service — regenerate the assignment to restore exports.')
@@ -957,6 +977,7 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
         body: JSON.stringify({ section }),
         signal: AbortSignal.timeout(180000),
       })
+      throwIfAuth(res)
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(failMessage(res, data))
       onRecordUpdate(issue.key, data)
@@ -990,6 +1011,7 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
         body: JSON.stringify({ content: next }),
         signal: AbortSignal.timeout(60000),
       })
+      throwIfAuth(res)
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(failMessage(res, data))
       onRecordUpdate(issue.key, data)
@@ -1012,6 +1034,7 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
         headers: authHeaders(),
         signal: AbortSignal.timeout(60000),
       })
+      throwIfAuth(res)
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(failMessage(res, data))
       setLatex(data.latex ?? '')
@@ -1034,6 +1057,7 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
         body: JSON.stringify(patch),
         signal: AbortSignal.timeout(30000),
       })
+      throwIfAuth(res)
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data?.error ?? `Options save failed (${res.status})`)
       onRecordUpdate(issue.key, data)

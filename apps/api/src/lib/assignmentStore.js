@@ -95,3 +95,26 @@ export async function listRecordsFor(requesterId) {
 export function listRecords() {
   return [...store.values()].sort(compareNewest);
 }
+
+// Remove everywhere: memory, Mongo, and the generated PDF file (best-effort each).
+export async function deleteRecord(id) {
+  store.delete(id);
+  try {
+    const mongoose = (await import("mongoose")).default;
+    if (mongoose.connection.readyState === 1) {
+      const { Assignment } = await import("../models/index.js");
+      await Assignment.deleteOne({ recordId: id });
+    }
+  } catch {
+    // Non-fatal.
+  }
+  try {
+    const { join } = await import("node:path");
+    const { unlinkSync, existsSync } = await import("node:fs");
+    const { assetsDir } = await import("./storage.js");
+    const pdf = join(assetsDir, "generated", `assignment-${id}.pdf`);
+    if (existsSync(pdf)) unlinkSync(pdf);
+  } catch {
+    // Non-fatal.
+  }
+}

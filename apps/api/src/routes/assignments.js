@@ -91,6 +91,19 @@ assignmentsRouter.get("/:id", async (req, res) => {
   return res.json(record);
 });
 
+// Delete a record everywhere it lives (memory, Mongo, generated PDF).
+assignmentsRouter.delete("/:id", async (req, res) => {
+  const record = await findRecord(req.params.id, ownerId(req));
+  if (!record) return res.status(404).json({ error: "Not found" });
+  try {
+    const { deleteRecord } = await import("../lib/assignmentStore.js");
+    await deleteRecord(record.id);
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(502).json({ error: "Delete failed", details: String(err).slice(0, 300) });
+  }
+});
+
 // Phase 2: printable HTML document (header + 50% watermark on every page).
 assignmentsRouter.get("/:id/html", async (req, res) => {
   const record = await findRecord(req.params.id, ownerId(req));
