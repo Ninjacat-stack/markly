@@ -82,7 +82,16 @@ export function setSessionCookie(res, token) {
 }
 
 export function clearSessionCookie(res) {
-  res.clearCookie(COOKIE_NAME, { path: "/" });
+  // Must mirror setSessionCookie's attributes: browsers won't delete a
+  // SameSite=None; Secure cookie when cleared with Lax defaults, which would
+  // resurrect the session on the next refresh (logout that doesn't stick).
+  const secure = process.env.COOKIE_SECURE === "1";
+  res.clearCookie(COOKIE_NAME, {
+    path: "/",
+    httpOnly: true,
+    sameSite: secure ? "none" : "lax",
+    secure,
+  });
 }
 
 export function tokenFromRequest(req) {
