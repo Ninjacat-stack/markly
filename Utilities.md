@@ -18,7 +18,7 @@
 | Package | Purpose |
 |---|---|
 | `express` | HTTP server + routing |
-| `cors` | Cross-origin access (Vite `:5173` → API `:4000`) |
+| `cors` | Cross-origin access (Vite `:5173` → API `:4000` locally; `marklyai.vercel.app` → API in prod — currently `*`) |
 | `dotenv` | `.env` loading |
 | `mongoose` | Optional Mongo persistence (works without it) |
 | `zod` | Input + Assignment JSON + section validation |
@@ -58,18 +58,22 @@
 
 | Thing | Purpose | Setup |
 |---|---|---|
-| MongoDB 7 (container `mongo`) | Optional persistence; auto-creates DB/collections on first write — nothing to provision | `wsl -- docker run -d --name mongo --restart unless-stopped -p 27017:27017 -v mongodata:/data/db mongo:7`, then `MONGODB_URI=mongodb://127.0.0.1:27017/Markly` |
-| texlive image (`texlive/texlive:latest`) | Isolated LaTeX→PDF compiler (NOT yet pulled) | `docker pull texlive/texlive:latest` in WSL + `PDF_COMPILE_CMD` mapping Windows temp dir via `wslpath` |
+| MongoDB 7 (container `mongo`) or Atlas M0 | Persistence; auto-creates DB/collections on first write — nothing to provision. Local: `wsl -- docker run -d --name mongo --restart unless-stopped -p 27017:27017 -v mongodata:/data/db mongo:7`, then `MONGODB_URI=mongodb://127.0.0.1:27017/Markly`. Prod: Atlas `mongodb+srv://…` (URL-encode the password; `@` → `%40`) | `MONGODB_URI` in `apps/api/.env` (gitignored) |
+| texlive image (`texlive/texlive:latest`, ~9 GB) | Isolated LaTeX→PDF compiler | Pre-pulled on the EC2 host (`sudo docker pull texlive/texlive:latest`); `PDF_COMPILE_CMD`, `PDF_DOCKER`, `PDF_IMAGE` |
 | Redis (absent) | BullMQ transport + future rate limiting | Set `REDIS_URL` + `BULLMQ_ENABLED=1` when available |
 | Qwen via OpenAI-compatible gateway (college-hosted) | LLM content generation | `LLM_BASE_URL` + `LLM_API_KEY` + `LLM_MODEL`; without all three the service runs a marked stub |
 | Tavily **or** SearXNG (both absent) | Web research | `TAVILY_API_KEY` or `SEARXNG_URL`; without either, research is skipped |
 | Monaco CDN | Editor runtime assets | None (runtime network required) |
-| GitHub (`Jiteshhh08/AssignmentAI`, branch `main`) | Source of truth | `git push origin main` |
+| GitHub (`Jiteshhh08/markly`, branch `main`) | Source of truth | `git push origin main` |
+| AWS EC2 `t3.micro` (Ubuntu 24.04, ap-south-1) + Elastic IP | Prod host for API + AI containers | `/opt/markly` checkout, `docker-compose.prod.yml`, SSH via `Markly.pem` |
+| Vercel | Prod frontend hosting (`marklyai.vercel.app`) | `VITE_API_URL` env var (baked at build; redeploy cache-off after changes) |
+| Caddy 2.6.2 + Let's Encrypt + nip.io | Prod HTTPS (`13-234-227-216.nip.io` → `127.0.0.1:4000`); cert auto-renews | `/etc/caddy/Caddyfile` on the EC2 host |
 | Qdrant (absent, future) | Vector retrieval when the corpus outgrows keyword search | Would plug into `retrieve_examples()` |
 
 ## 6. What is deliberately NOT used
 
 No vector DB (corpus too small), no fine-tuning (gateway-only by design),
-no Docker Desktop (WSL Engine instead), no cloud storage (local `assets/` + `corpus/`,
-both gitignored), no Atlas (local Mongo suffices), no full shadcn/Radix set.
+no Docker Desktop (WSL Engine for local dev, native Engine on EC2),
+no cloud storage (local `assets/` + `corpus/`, both gitignored),
+no self-hosted Mongo in prod (Atlas M0 instead), no full shadcn/Radix set.
 

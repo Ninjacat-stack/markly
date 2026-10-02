@@ -13,11 +13,20 @@ DEFAULT_PROFILE = {
     "validation": {},
 }
 
-# __file__ = <root>/services/ai-service/app/subjects.py, so parents[3] is the repo root.
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+# Dev layout: <root>/services/ai-service/app/subjects.py → walk up to the repo
+# root that holds packages/shared/subject-profiles.json. Containers don't ship
+# the repo root, so SUBJECT_PROFILES_PATH points at the mounted copy instead
+# and this search simply finds nothing (returning "/" as a harmless fallback).
+def _find_repo_root() -> Path:
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "packages" / "shared" / "subject-profiles.json").exists():
+            return parent
+    return Path("/")
+
+
 CANDIDATE_PATHS = [
-    Path(os.getenv("SUBJECT_PROFILES_PATH", "")) if os.getenv("SUBJECT_PROFILES_PATH") else None,
-    _REPO_ROOT / "packages" / "shared" / "subject-profiles.json",
+    Path(os.environ["SUBJECT_PROFILES_PATH"]) if os.getenv("SUBJECT_PROFILES_PATH") else None,
+    _find_repo_root() / "packages" / "shared" / "subject-profiles.json",
 ]
 
 

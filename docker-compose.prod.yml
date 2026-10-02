@@ -31,6 +31,9 @@ services:
       context: ./services/ai-service
     env_file:
       - ./services/ai-service/.env
+    environment:
+      SUBJECT_PROFILES_PATH: /config/subject-profiles.json
     volumes:
+      - ./packages/shared/subject-profiles.json:/config/subject-profiles.json:ro
       - ./services/ai-service/corpus:/app/corpus
     restart: unless-stopped
