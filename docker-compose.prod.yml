@@ -1,7 +1,7 @@
 # Production stack: API + AI service only (frontend is deployed to Vercel).
 # Reverse proxy (Caddy/nginx) on the host terminates HTTPS -> 127.0.0.1:4000.
 #
-# Assumes the repo is cloned at /opt/assignmentai (the duplicate /data bind is
+# Assumes the repo is cloned at /opt/markly (the duplicate /data bind is
 # intentional: the API's {dir} placeholder must be a path that the HOST dockerd
 # also sees, so the same directory is mounted at the container path AND at its
 # host path for `docker run -v "{dir}:/work"` PDF compilation).
@@ -16,10 +16,10 @@ services:
       - ./apps/api/.env
     environment:
       AI_SERVICE_URL: http://ai-service:8001
-      TMPDIR: /opt/assignmentai/data/tex
+      TMPDIR: /opt/markly/data/tex
     volumes:
       - ./data:/app/data
-      - ./data:/opt/assignmentai/data
+      - ./data:/opt/markly/data
       - ./apps/api/assets:/app/assets
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:

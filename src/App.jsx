@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:4000'
-const LS_ISSUES = 'assignmentai.issues.v2'
-const LS_SEQ = 'assignmentai.seq.v2'
-const LS_SESSION = 'assignmentai.session.v1'
+const LS_ISSUES = 'Markly.issues.v2'
+const LS_SEQ = 'Markly.seq.v2'
+const LS_SESSION = 'Markly.session.v1'
 
 function loadSession() {
   try {
@@ -660,7 +660,7 @@ export default function App() {
       <header className="no-print flex h-14 shrink-0 items-center gap-2 border-b border-[#DFE1E6] bg-white px-3 sm:px-4">
         <span className="flex items-center gap-2">
           <LogoMark className="h-7 w-7" />
-          <span className="text-[15px] font-semibold tracking-tight">AssignmentAI</span>
+          <span className="text-[15px] font-semibold tracking-tight">Markly</span>
         </span>
         <span className="hidden rounded bg-[#E9F2FF] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#0055CC] sm:inline">Workspace</span>
         <div className="ml-auto flex items-center gap-1.5">
@@ -839,7 +839,7 @@ function EmptyState({ onCreate }) {
       </span>
       <h2 className="mt-4 text-[17px] font-semibold">Create your first assignment</h2>
       <p className="mt-1.5 max-w-md text-[13px] leading-relaxed text-[#626F86]">
-        Provide an aim, subject and experiment number. AssignmentAI drafts the objectives, theory, steps and
+        Provide an aim, subject and experiment number. Markly drafts the objectives, theory, steps and
         conclusion, then renders a print-ready department document.
       </p>
       <button onClick={() => onCreate(null)} className="mt-5 inline-flex items-center gap-1.5 rounded-md bg-[#0C66E4] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#0055CC]">
@@ -1824,3 +1824,4 @@ function CreateModal({ initial, templates = [], onClose, onSubmit }) {
     </div>
   )
 }
+

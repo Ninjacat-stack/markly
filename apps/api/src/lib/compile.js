@@ -61,7 +61,7 @@ export function fillCmd(dir) {
 }
 
 export async function compileLatexToPdf(tex, template, workDir) {
-  const dir = workDir ?? mkdtempSync(join(tmpdir(), "assignmentai-tex-"));
+  const dir = workDir ?? mkdtempSync(join(tmpdir(), "Markly-tex-"));
   try {
     writeFileSync(join(dir, "doc.tex"), tex);
     // Asset filenames are fixed so \includegraphics{header.png} resolves.
@@ -95,3 +95,4 @@ function tailFile(path, lines) {
     return "";
   }
 }
+

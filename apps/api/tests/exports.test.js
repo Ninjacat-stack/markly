@@ -99,7 +99,7 @@ describe("PDF compiler", () => {
     const os = await import("node:os");
     const fs = await import("node:fs");
     const path = await import("node:path");
-    const marker = path.join(os.tmpdir(), "assignmentai-passes-probe.txt").replaceAll("\\", "/");
+    const marker = path.join(os.tmpdir(), "Markly-passes-probe.txt").replaceAll("\\", "/");
     try { fs.unlinkSync(marker); } catch { /* first run */ }
     const prev = process.env.PDF_COMPILE_CMD;
     // Stub compiler: records each invocation, then fakes a PDF.
@@ -131,8 +131,8 @@ describe("PDF compiler", () => {
 
 describe("WSL compile command", () => {
   it("translates Windows temp paths for WSL docker mounts", () => {
-    assert.equal(toWslPath("C:\\Users\\Admin\\Temp\\assignmentai-tex-abc"), "/mnt/c/Users/Admin/Temp/assignmentai-tex-abc");
-    assert.equal(toWslPath("/tmp/assignmentai-tex-abc"), "/tmp/assignmentai-tex-abc");
+    assert.equal(toWslPath("C:\\Users\\Admin\\Temp\\Markly-tex-abc"), "/mnt/c/Users/Admin/Temp/Markly-tex-abc");
+    assert.equal(toWslPath("/tmp/Markly-tex-abc"), "/tmp/Markly-tex-abc");
   });
   it("fills {wslDir} from PDF_COMPILE_CMD", () => {
     const prev = process.env.PDF_COMPILE_CMD;
@@ -147,3 +147,4 @@ describe("WSL compile command", () => {
     }
   });
 });
+

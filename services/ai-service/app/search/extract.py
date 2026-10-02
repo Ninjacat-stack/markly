@@ -41,7 +41,7 @@ def fetch_text(url: str, timeout_s: float = 15.0) -> str:
     """Fetch a page and return capped plain text. Empty string on any failure."""
     try:
         with httpx.Client(timeout=timeout_s, follow_redirects=True, max_redirects=3) as client:
-            resp = client.get(url, headers={"User-Agent": "AssignmentAI-research/0.1"})
+            resp = client.get(url, headers={"User-Agent": "Markly-research/0.1"})
             if resp.status_code != 200:
                 return ""
             ctype = resp.headers.get("content-type", "")
@@ -50,3 +50,4 @@ def fetch_text(url: str, timeout_s: float = 15.0) -> str:
             return strip_html(resp.text[:MAX_BYTES])
     except Exception:
         return ""
+

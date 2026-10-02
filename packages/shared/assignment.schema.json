@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://assignmentai.local/schemas/assignment/v1.json",
+  "$id": "https://Markly.local/schemas/assignment/v1.json",
   "title": "Assignment",
   "description": "Canonical Assignment JSON (Phase 1). LLM generates content only; templates control presentation.",
   "type": "object",
@@ -41,3 +41,4 @@
   },
   "additionalProperties": false
 }
+

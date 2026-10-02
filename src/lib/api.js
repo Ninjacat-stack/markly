@@ -3,12 +3,12 @@ export const API_BASE = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:4000'
 export const SUBJECTS = ['DBMS', 'DSA', 'UHV', 'DLDCA', 'Professional Skills / AWS']
 
 export function getToken() {
-  return localStorage.getItem('assignmentai_token') ?? ''
+  return localStorage.getItem('Markly_token') ?? ''
 }
 
 export function setToken(token) {
-  if (token) localStorage.setItem('assignmentai_token', token)
-  else localStorage.removeItem('assignmentai_token')
+  if (token) localStorage.setItem('Markly_token', token)
+  else localStorage.removeItem('Markly_token')
 }
 
 function authHeaders(extra = {}) {
@@ -76,3 +76,4 @@ export async function apiUploadPdf(path, file, extra = {}) {
   })
   return handle(res)
 }
+

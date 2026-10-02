@@ -4,7 +4,7 @@ import { Button, Card } from '../components/ui.jsx'
 export default function Landing() {
   return (
     <div className="mx-auto max-w-3xl px-6 py-16 text-center">
-      <h1 className="text-4xl font-bold tracking-tight">AssignmentAI</h1>
+      <h1 className="text-4xl font-bold tracking-tight">Markly</h1>
       <p className="mt-4 text-lg text-ink-500">
         An assignment compiler: aim in, structured academic document out — preview, DOCX, LaTeX, PDF.
       </p>
@@ -25,3 +25,4 @@ export default function Landing() {
     </div>
   )
 }
+

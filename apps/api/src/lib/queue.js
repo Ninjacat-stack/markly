@@ -62,9 +62,9 @@ async function ensureBullmq() {
       maxRetriesPerRequest: 2,
       retryStrategy: (times) => Math.min(times * 500, 5000),
     };
-    bullmqQueue = new Queue("assignmentai-generation", { connection });
+    bullmqQueue = new Queue("Markly-generation", { connection });
     bullmqWorker = new Worker(
-      "assignmentai-generation",
+      "Markly-generation",
       async (bjob) => runGenerationJob(bjob.data.input, bjob.data.jobId),
       { connection },
     );
@@ -170,3 +170,4 @@ export async function runGenerationJob(input, jobId) {
 export function getAssignmentForJob(job) {
   return job.assignmentId ? getRecord(job.assignmentId) : null;
 }
+

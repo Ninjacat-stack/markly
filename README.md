@@ -1,4 +1,4 @@
-# AssignmentAI — all phases built (0–9)
+# Markly — all phases built (0–9)
 
 Assignment compiler: **React → Express → FastAPI → Qwen → validated Assignment JSON → HTML / DOCX / LaTeX / PDF.**
 
@@ -110,3 +110,4 @@ cd apps/api && npm test                                 # 27 passing: schemas, t
 - Deliberately deferred: real-gateway quality QA, texlive end-to-end compile,
   Redis-backed BullMQ, Mongo-backed history, Qdrant embeddings,
   full shadcn component set, "Explain this assignment" tutoring feature
+

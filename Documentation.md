@@ -1,11 +1,11 @@
-# AssignmentAI — Documentation
+# Markly — Documentation
 
 > Last audited: 2026-10-01. Covers all of Phases 0–9 as built.
 > Companion file: `Utilities.md` (every external dependency/service).
 
 ## 1. What this is
 
-AssignmentAI is an **assignment compiler** for engineering practicals. A student enters
+Markly is an **assignment compiler** for engineering practicals. A student enters
 an **aim** (plus optional description/subject/experiment number/technology) and gets a
 structured academic document out — previewable in the browser and exportable as
 **DOCX, LaTeX, and PDF**.
@@ -77,7 +77,7 @@ AI (`services/ai-service/.env`): `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`
 (either activates research), `SANDBOX_DOCKER` (`docker`; bogus value = graceful skip).
 
 Frontend (`.env`): `VITE_API_URL` (http://127.0.0.1:4000; baked at `vite build` time).
-Login token persists in `localStorage` (`assignmentai_token`).
+Login token persists in `localStorage` (`Markly_token`).
 
 ## 5. Generation pipeline (where each step lives)
 
@@ -196,3 +196,4 @@ production along with `JWT_SECRET`, `AUTH_REQUIRED=1`, and Redis rate limiting.
 - [later] "Explain this assignment" tutoring UI (records already carry content + sources)
 - [later] Full shadcn set (hand-rolled Button/Card/Input today), 404 page, frontend error boundaries, list pagination, AI request logging
 - [later] `docker-compose.yml` needs real `.env` files present (only `.example`s are committed) and has never been run (no Docker on Windows host)
+

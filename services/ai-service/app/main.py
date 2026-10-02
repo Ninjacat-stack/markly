@@ -18,7 +18,7 @@ from .prompts import PROMPT_VERSION  # noqa: E402
 from .schemas import GenerateRequest, GenerateResponse, RegenerateRequest, RegenerateResponse  # noqa: E402
 from .sections import regenerate_section  # noqa: E402
 
-app = FastAPI(title="AssignmentAI AI Service", version="0.1.0")
+app = FastAPI(title="Markly AI Service", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -136,3 +136,4 @@ async def analyze_template(file: UploadFile = File(...)) -> dict:
         "requiredSections": [s for s in order if s in ("title", "conclusion") or s in detected],
         "chars": len(text),
     }
+

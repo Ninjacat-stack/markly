@@ -59,7 +59,7 @@ app.use("/api/v1/jobs", jobsRouter);
 app.use("/api/v1/templates", templatesRouter);
 
 app.get("/", (_req, res) => {
-  res.json({ service: "assignmentai-api", docs: "/api/v1/health" });
+  res.json({ service: "Markly-api", docs: "/api/v1/health" });
 });
 
 const PORT = Number(process.env.PORT ?? 4000);
@@ -83,3 +83,4 @@ if (process.env.NODE_ENV !== "test") {
 }
 
 export default app;
+

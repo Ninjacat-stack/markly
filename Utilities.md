@@ -1,4 +1,4 @@
-# AssignmentAI — Utilities (every external thing this project uses)
+# Markly — Utilities (every external thing this project uses)
 
 > Runtimes, packages, infrastructure, and services. "Configured in" tells you
 > where each one is referenced. See `Documentation.md` for how they fit together.
@@ -58,7 +58,7 @@
 
 | Thing | Purpose | Setup |
 |---|---|---|
-| MongoDB 7 (container `mongo`) | Optional persistence; auto-creates DB/collections on first write — nothing to provision | `wsl -- docker run -d --name mongo --restart unless-stopped -p 27017:27017 -v mongodata:/data/db mongo:7`, then `MONGODB_URI=mongodb://127.0.0.1:27017/assignmentai` |
+| MongoDB 7 (container `mongo`) | Optional persistence; auto-creates DB/collections on first write — nothing to provision | `wsl -- docker run -d --name mongo --restart unless-stopped -p 27017:27017 -v mongodata:/data/db mongo:7`, then `MONGODB_URI=mongodb://127.0.0.1:27017/Markly` |
 | texlive image (`texlive/texlive:latest`) | Isolated LaTeX→PDF compiler (NOT yet pulled) | `docker pull texlive/texlive:latest` in WSL + `PDF_COMPILE_CMD` mapping Windows temp dir via `wslpath` |
 | Redis (absent) | BullMQ transport + future rate limiting | Set `REDIS_URL` + `BULLMQ_ENABLED=1` when available |
 | Qwen via OpenAI-compatible gateway (college-hosted) | LLM content generation | `LLM_BASE_URL` + `LLM_API_KEY` + `LLM_MODEL`; without all three the service runs a marked stub |
@@ -72,3 +72,4 @@
 No vector DB (corpus too small), no fine-tuning (gateway-only by design),
 no Docker Desktop (WSL Engine instead), no cloud storage (local `assets/` + `corpus/`,
 both gitignored), no Atlas (local Mongo suffices), no full shadcn/Radix set.
+
