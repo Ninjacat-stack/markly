@@ -71,6 +71,7 @@ Open `:5173`. Health checks: `:8001/health`, `:4000/api/v1/health`
 API (`apps/api/.env`): `PORT` (4000), `AI_SERVICE_URL` (http://127.0.0.1:8001),
 `MONGODB_URI` (unset = in-memory), `RATE_LIMIT_PER_MIN` (60),
 `JWT_SECRET` (set in production), `AUTH_REQUIRED` (`1` enforces tokens, default open),
+`COOKIE_SECURE` (`1` in HTTPS cross-site production for the session cookie),
 `REDIS_URL` + `BULLMQ_ENABLED=1` (unset = in-process jobs), `PDF_COMPILE_CMD` (empty/unset =
 native-docker default since the `||`-fallback fix; on Windows-with-WSL-Docker use
 `wsl docker run --rm -v "{wslDir}:/work" -w /work texlive/texlive:latest …`).
@@ -137,7 +138,10 @@ AI service: `GET /health`, `POST /v1/generate`, `POST /v1/regenerate-section`,
 - Jobs: `pending → researching → generating → validating → completed/failed`
   (+ `rendering` reserved). In-process queue by default; BullMQ transport when
   `REDIS_URL` + `BULLMQ_ENABLED=1` is set (status map stays in-process — move to Redis/Mongo for multi-instance).
-- Auth: bcrypt + JWT, open dev mode unless `AUTH_REQUIRED=1`.
+- Auth: bcrypt + JWT, open dev mode unless `AUTH_REQUIRED=1`. Login/register also set
+  an httpOnly `markly_token` cookie (Bearer kept as fallback); the board restores the
+  session on boot via `GET /auth/me`, so refresh keeps you logged in with zero browser
+  storage. Logout clears both. CORS allows credentials with a reflected origin.
 
 ## 8. Frontend (Jira-style workspace board)
 
@@ -185,14 +189,14 @@ production along with `JWT_SECRET`, `AUTH_REQUIRED=1`, and Redis rate limiting.
 | Empty `{}` → 400 | Expected: aim is mandatory |
 | PDF export 502 | Read the message: missing image = pull texlive; otherwise the log tail names the cause |
 | `opacity` looks wrong in Word | Expected: DOCX uses PNG-native transparency (see §7) |
-| Board empty + logged out after reload | Expected: no browser storage — board rebuilds from server history, log in again |
+| Board empty after reload but still logged in | Expected: board rebuilds from server history (no browser storage); login persists via cookie |
 | History empties on restart | Expected without Mongo (memory store); set `MONGODB_URI` |
 
 ## 12. Known gaps (audit 2026-10-02; owner in brackets)
 
 - [done in prod] texlive pulled + end-to-end PDF compile verified on EC2 (178 KB, `%PDF-1.7`)
 - [done in prod] real Qwen gateway live (`Qwen3.6-35B-A3B`); MongoDB Atlas connected (`[api] connected to MongoDB`); frontend on Vercel (`marklyai.vercel.app`) — see `deployment-notes.md`
-- [you] Production hardening still open: CORS is `*` (fine for now, lock to the Vercel origin later), `JWT_SECRET` rotation schedule, Redis rate limiting
+- [you] Production hardening still open: lock CORS to the Vercel origin (currently reflects any origin), `JWT_SECRET` rotation schedule, Redis rate limiting
 - [me, next] Template edits still memory-only (persist on save); reload users from Mongo on boot (restart logs everyone out today)
 - [me, next] Route-level tests for examples/jobs/auth/templates-from-pdf proxies (live-verified only)
 - [me, next] `packages/shared` is load-bearing for nothing (profiles loaded by path) — either wire it as a real dependency or fold it

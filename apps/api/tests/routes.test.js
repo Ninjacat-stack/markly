@@ -86,3 +86,38 @@ describe("route wiring", () => {
     assert.equal(me.status, 401);
   });
 });
+
+describe("cookie sessions (refresh-proof without browser storage)", () => {
+  async function raw(method, path, body, cookie) {
+    const res = await fetch(`${base}${path}`, {
+      method,
+      headers: {
+        "content-type": "application/json",
+        ...(cookie ? { cookie } : {}),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    const setCookies = typeof res.headers.getSetCookie === "function" ? res.headers.getSetCookie() : [];
+    return { status: res.status, data, setCookies };
+  }
+
+  it("sets an httpOnly cookie on register, honors it on /me, clears on logout", async () => {
+    const email = `cookie${Date.now()}@example.com`;
+    const reg = await raw("POST", "/api/v1/auth/register", { email, password: "supersecret1" });
+    assert.equal(reg.status, 201);
+    const sessionCookie = reg.setCookies.find((c) => c.startsWith("markly_token="));
+    assert.ok(sessionCookie, "expected a markly_token Set-Cookie");
+    assert.ok(sessionCookie.includes("HttpOnly"), "session cookie must be httpOnly");
+
+    // No Bearer token — cookie alone authenticates (this is what survives refresh).
+    const me = await raw("GET", "/api/v1/auth/me", undefined, sessionCookie.split(";")[0]);
+    assert.equal(me.status, 200);
+    assert.equal(me.data.user.email, email);
+
+    const out = await raw("POST", "/api/v1/auth/logout", undefined, sessionCookie.split(";")[0]);
+    assert.equal(out.status, 200);
+    const cleared = out.setCookies.find((c) => c.startsWith("markly_token="));
+    assert.ok(cleared && /expires=thu, 01 jan 1970/i.test(cleared), "logout must expire the cookie");
+  });
+});

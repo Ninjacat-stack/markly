@@ -21,7 +21,9 @@ process.on("unhandledRejection", (err) => {
 
 const app = express();
 app.use(helmet({ crossOriginResourcePolicy: false }));
-app.use(cors());
+// credentials:true + reflected origin: lets the httpOnly session cookie ride
+// along (required cross-site, harmless same-origin). Never use "*" with credentials.
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: "1mb" }));
 
 // Minimal request logging (Phase 9 observability baseline).

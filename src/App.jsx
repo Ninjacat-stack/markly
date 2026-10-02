@@ -12,6 +12,12 @@ function authHeaders(extra = {}) {
   return memoryToken ? { ...extra, Authorization: `Bearer ${memoryToken}` } : extra
 }
 
+// credentials:'include' lets the httpOnly session cookie ride along
+// (required cross-site in production, harmless same-origin in dev).
+function apiFetch(url, options = {}) {
+  return fetch(url, { credentials: 'include', ...options })
+}
+
 // Server record -> board card (keyed by record id so reloads stay consistent).
 function recordToIssue(record) {
   const c = record.content ?? {}
@@ -427,18 +433,23 @@ export default function App() {
   }, [handleAuthRequired, session])
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/v1/health`)
+    apiapiFetch(`${API_BASE}/api/v1/health`)
       .then((r) => setServiceUp(r.ok))
       .catch(() => setServiceUp(false))
-    fetch(`${API_BASE}/api/v1/templates`, { headers: authHeaders() })
+    apiFetch(`${API_BASE}/api/v1/templates`, { headers: authHeaders() })
       .then((r) => r.json())
       .then((d) => setTemplates(d.templates ?? []))
       .catch(() => setTemplates([]))
     // Board boots from the server (Mongo-backed history), never the browser.
-    fetch(`${API_BASE}/api/v1/assignments`, { headers: authHeaders() })
+    apiFetch(`${API_BASE}/api/v1/assignments`, { headers: authHeaders() })
       .then((r) => r.json())
       .then((d) => setIssues((d.assignments ?? []).map(recordToIssue)))
       .catch(() => { /* service banner covers unreachable servers */ })
+    // Restore a still-valid cookie session (nothing stored in the browser).
+    apiFetch(`${API_BASE}/api/v1/auth/me`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.user?.email) setSession({ email: d.user.email }) })
+      .catch(() => { /* logged out is a valid state */ })
   }, [])
 
   // Payload is built from the issue object itself — never captured inside a
@@ -463,7 +474,7 @@ export default function App() {
       setIssues((prev) => prev.map((it) => (it.key === key ? { ...it, status: 'inprogress', error: '', stale: false } : it)))
       let status = 0
       try {
-        const res = await fetch(`${API_BASE}/api/v1/assignments/generate`, {
+        const res = await apiFetch(`${API_BASE}/api/v1/assignments/generate`, {
           method: 'POST',
           headers: authHeaders({ 'content-type': 'application/json' }),
           body: JSON.stringify(payload),
@@ -516,7 +527,7 @@ export default function App() {
     Promise.all(
       withRecord.map(async (it) => {
         try {
-          const res = await fetch(`${API_BASE}/api/v1/assignments/${it.record.id}`, { signal: AbortSignal.timeout(10000) })
+          const res = await apiFetch(`${API_BASE}/api/v1/assignments/${it.record.id}`, { signal: AbortSignal.timeout(10000) })
           return res.status === 404 ? it.key : null
         } catch {
           return null // network trouble ≠ record gone
@@ -570,7 +581,7 @@ export default function App() {
       // Server-side delete (memory + Mongo); cards without records only exist locally.
       if (recordId) {
         try {
-          const res = await fetch(`${API_BASE}/api/v1/assignments/${recordId}`, {
+          const res = await apiFetch(`${API_BASE}/api/v1/assignments/${recordId}`, {
             method: 'DELETE',
             headers: authHeaders(),
             signal: AbortSignal.timeout(30000),
@@ -593,7 +604,7 @@ export default function App() {
 
   const refreshTemplates = useCallback(async () => {
     try {
-      const d = await fetch(`${API_BASE}/api/v1/templates`, { headers: authHeaders() }).then((r) => r.json())
+      const d = await apiFetch(`${API_BASE}/api/v1/templates`, { headers: authHeaders() }).then((r) => r.json())
       setTemplates(d.templates ?? [])
     } catch {
       /* keep stale list */
@@ -604,7 +615,7 @@ export default function App() {
   const importRecordToBoard = useCallback(
     async (recordId) => {
       try {
-        const record = await fetch(`${API_BASE}/api/v1/assignments/${recordId}`, { headers: authHeaders() }).then((r) => {
+        const record = await apiFetch(`${API_BASE}/api/v1/assignments/${recordId}`, { headers: authHeaders() }).then((r) => {
           if (!r.ok) throw new Error(`Load failed (${r.status})`)
           return r.json()
         })
@@ -623,7 +634,7 @@ export default function App() {
     const recordId = issue.record?.id
     if (!recordId) return
     try {
-      const res = await fetch(`${API_BASE}/api/v1/assignments/${recordId}/html`, {
+      const res = await apiFetch(`${API_BASE}/api/v1/assignments/${recordId}/html`, {
         headers: authHeaders(),
         signal: AbortSignal.timeout(180000),
       })
@@ -701,7 +712,11 @@ export default function App() {
           </button>
           {session ? (
             <button
-              onClick={() => { saveSession(null); pushToast('success', 'Logged out', 'Session cleared on this device.') }}
+              onClick={async () => {
+                try { await apiFetch(`${API_BASE}/api/v1/auth/logout`, { method: 'POST' }) } catch { /* cookie may already be gone */ }
+                saveSession(null)
+                pushToast('success', 'Logged out', 'Session cleared.')
+              }}
               title={`Logged in as ${session.email} — click to log out`}
               className="flex h-8 w-8 items-center justify-center rounded-full bg-[#6E5DC6] text-[12px] font-bold text-white"
             >
@@ -901,7 +916,7 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
     const recordId = issue.record?.id
     if (!recordId) return
     setRecordGone(false)
-    fetch(`${apiBase}/api/v1/assignments/${recordId}`, { headers: authHeaders() })
+    apiFetch(`${apiBase}/api/v1/assignments/${recordId}`, { headers: authHeaders() })
       .then((r) => { if (r.status === 404) setRecordGone(true) })
       .catch(() => { /* offline banner covers unreachable servers */ })
   }, [issue.record?.id, apiBase])
@@ -933,7 +948,7 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
     setExportBusy(kind)
     setExportError('')
     try {
-      const res = await fetch(`${apiBase}/api/v1/assignments/${recordId}/${kind}`, {
+      const res = await apiFetch(`${apiBase}/api/v1/assignments/${recordId}/${kind}`, {
         method: kind === 'pdf' ? 'POST' : 'GET',
         headers: authHeaders({ 'content-type': 'application/json' }),
         body: kind === 'pdf' ? '{}' : undefined,
@@ -971,7 +986,7 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
     setRegenBusy(section)
     setEditError('')
     try {
-      const res = await fetch(`${apiBase}/api/v1/assignments/${recordId}/regenerate-section`, {
+      const res = await apiFetch(`${apiBase}/api/v1/assignments/${recordId}/regenerate-section`, {
         method: 'POST',
         headers: authHeaders({ 'content-type': 'application/json' }),
         body: JSON.stringify({ section }),
@@ -1005,7 +1020,7 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
     }
     setSaveBusy(true)
     try {
-      const res = await fetch(`${apiBase}/api/v1/assignments/${recordId}`, {
+      const res = await apiFetch(`${apiBase}/api/v1/assignments/${recordId}`, {
         method: 'PUT',
         headers: authHeaders({ 'content-type': 'application/json' }),
         body: JSON.stringify({ content: next }),
@@ -1030,7 +1045,7 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
     setLatexBusy(true)
     setLatexError('')
     try {
-      const res = await fetch(`${apiBase}/api/v1/assignments/${recordId}/latex`, {
+      const res = await apiFetch(`${apiBase}/api/v1/assignments/${recordId}/latex`, {
         headers: authHeaders(),
         signal: AbortSignal.timeout(60000),
       })
@@ -1051,7 +1066,7 @@ function DetailDrawer({ issue, onClose, onRetry, onDelete, onDownload, onOpenPre
     setOptBusy(true)
     setOptError('')
     try {
-      const res = await fetch(`${apiBase}/api/v1/assignments/${recordId}/options`, {
+      const res = await apiFetch(`${apiBase}/api/v1/assignments/${recordId}/options`, {
         method: 'PATCH',
         headers: authHeaders({ 'content-type': 'application/json' }),
         body: JSON.stringify(patch),
@@ -1489,7 +1504,7 @@ function LoginModal({ onClose, onLogin }) {
     setBusy(true)
     setError('')
     try {
-      const res = await fetch(`${API_BASE}/api/v1/auth/${mode}`, {
+      const res = await apiFetch(`${API_BASE}/api/v1/auth/${mode}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(mode === 'register' ? { email, password, name } : { email, password }),
@@ -1549,7 +1564,7 @@ function TemplatesModal({ templates, onRefresh, notify, onClose }) {
     setBusy(true)
     setMsg('')
     try {
-      const res = await fetch(`${API_BASE}/api/v1/templates`, {
+      const res = await apiFetch(`${API_BASE}/api/v1/templates`, {
         method: 'POST',
         headers: authHeaders({ 'content-type': 'application/json' }),
         body: JSON.stringify({ name: name.trim() }),
@@ -1576,7 +1591,7 @@ function TemplatesModal({ templates, onRefresh, notify, onClose }) {
       const form = new FormData()
       form.append('file', file)
       if (name.trim()) form.append('name', name.trim())
-      const res = await fetch(`${API_BASE}/api/v1/templates/from-pdf`, {
+      const res = await apiFetch(`${API_BASE}/api/v1/templates/from-pdf`, {
         method: 'POST',
         headers: authHeaders(),
         body: form,
@@ -1642,7 +1657,7 @@ function HistoryModal({ onImport, onClose }) {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/v1/assignments`, { headers: authHeaders(), signal: AbortSignal.timeout(30000) })
+    apiFetch(`${API_BASE}/api/v1/assignments`, { headers: authHeaders(), signal: AbortSignal.timeout(30000) })
       .then((r) => r.json())
       .then((d) => setItems(d.assignments ?? []))
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
@@ -1848,4 +1863,5 @@ function CreateModal({ initial, templates = [], onClose, onSubmit }) {
     </div>
   )
 }
+
 

@@ -52,13 +52,49 @@ export function verifyToken(token) {
   }
 }
 
-// Attaches req.user when a valid Bearer token is present; never rejects.
-export function authAttach(req, _res, next) {
-  const header = req.headers.authorization ?? "";
-  if (header.startsWith("Bearer ")) {
-    const claims = verifyToken(header.slice(7));
-    if (claims) req.user = claims;
+export const COOKIE_NAME = "markly_token";
+
+function parseCookies(req) {
+  const out = {};
+  const header = req.headers.cookie ?? "";
+  for (const part of header.split(";")) {
+    const i = part.indexOf("=");
+    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
   }
+  return out;
+}
+
+function cookieAttrs() {
+  // Cross-site production (Vercel -> API) needs SameSite=None + Secure;
+  // same-origin local dev works with Lax. Toggle with COOKIE_SECURE=1.
+  const secure = process.env.COOKIE_SECURE === "1";
+  return {
+    httpOnly: true,
+    path: "/",
+    maxAge: 7 * 24 * 3600 * 1000,
+    sameSite: secure ? "none" : "lax",
+    secure,
+  };
+}
+
+export function setSessionCookie(res, token) {
+  res.cookie(COOKIE_NAME, token, cookieAttrs());
+}
+
+export function clearSessionCookie(res) {
+  res.clearCookie(COOKIE_NAME, { path: "/" });
+}
+
+export function tokenFromRequest(req) {
+  const header = req.headers.authorization ?? "";
+  if (header.startsWith("Bearer ")) return header.slice(7);
+  return parseCookies(req)[COOKIE_NAME] ?? "";
+}
+
+// Attaches req.user from Bearer token OR httpOnly session cookie; never rejects.
+export function authAttach(req, _res, next) {
+  const claims = verifyToken(tokenFromRequest(req));
+  if (claims) req.user = claims;
   next();
 }
 
