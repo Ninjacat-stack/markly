@@ -303,8 +303,8 @@ function LogoMark({ className = 'h-8 w-8' }) {
   return (
     <svg viewBox="0 0 32 32" className={className} aria-hidden="true">
       <rect x="1" y="1" width="30" height="30" rx="8" fill="#1A4543" />
-      <path d="M10 22.5 16 8l6 14.5h-3.4l-1.1-2.9h-5L11.4 22.5H10Zm4.2-5.4h2.9L16 14l-1.8 3.1Z" fill="#fff" />
-      <circle cx="22.6" cy="10.4" r="1.9" fill="#F0BE6F" />
+      <path d="M8 23.5v-12l7.5 7 7.5-7v12" fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="25" cy="8" r="2" fill="#F0BE6F" />
     </svg>
   )
 }
